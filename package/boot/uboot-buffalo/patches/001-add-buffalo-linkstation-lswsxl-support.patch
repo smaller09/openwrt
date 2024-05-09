@@ -1,0 +1,3452 @@
+From 148c51daae17d54a706610b554a73da49fc3d830 Mon Sep 17 00:00:00 2001
+From: smaller09 <foolmenomore@gmail.com>
+Date: Sat, 9 Dec 2023 12:23:14 +0800
+Subject: [PATCH] add buffalo linkstation lswsxl support
+
+---
+ arch/arm/dts/kirkwood-linkstation-lswsxl.dts |  686 ++++++++
+ arch/arm/mach-kirkwood/Kconfig               |   10 +
+ board/buffalo/lswsxl/Kconfig                 |   12 +
+ board/buffalo/lswsxl/MAINTAINERS             |    6 +
+ board/buffalo/lswsxl/Makefile                |    6 +
+ board/buffalo/lswsxl/README                  |  149 ++
+ board/buffalo/lswsxl/kwbimage-lswsxl.cfg     |  213 +++
+ board/buffalo/lswsxl/kwbimage.cfg            |  213 +++
+ board/buffalo/lswsxl/lswsxl.c                |  296 ++++
+ board/buffalo/lswsxl/lswsxl.h                |   68 +
+ configs/lswsxl_defconfig                     | 1584 ++++++++++++++++++
+ include/configs/lswsxl.h                     |   91 +
+ 12 files changed, 3334 insertions(+)
+ create mode 100644 arch/arm/dts/kirkwood-linkstation-lswsxl.dts
+ create mode 100644 board/buffalo/lswsxl/Kconfig
+ create mode 100644 board/buffalo/lswsxl/MAINTAINERS
+ create mode 100644 board/buffalo/lswsxl/Makefile
+ create mode 100644 board/buffalo/lswsxl/README
+ create mode 100644 board/buffalo/lswsxl/kwbimage-lswsxl.cfg
+ create mode 100644 board/buffalo/lswsxl/kwbimage.cfg
+ create mode 100644 board/buffalo/lswsxl/lswsxl.c
+ create mode 100644 board/buffalo/lswsxl/lswsxl.h
+ create mode 100644 configs/lswsxl_defconfig
+ create mode 100644 include/configs/lswsxl.h
+
+diff --git a/arch/arm/dts/kirkwood-linkstation-lswsxl.dts b/arch/arm/dts/kirkwood-linkstation-lswsxl.dts
+new file mode 100644
+index 0000000000..46a2d09eea
+--- /dev/null
++++ b/arch/arm/dts/kirkwood-linkstation-lswsxl.dts
+@@ -0,0 +1,686 @@
++/dts-v1/;
++
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/gpio/gpio.h>
++
++#define MBUS_ID(target,attributes) (((target) << 24) | ((attributes) << 16))
++
++/ {
++	#address-cells = <0x01>;
++	#size-cells = <0x01>;
++	compatible = "buffalo,lswsxl", "marvell,kirkwood-88f6281", "marvell,kirkwood";
++	interrupt-parent = <&intc>;
++	model = "Buffalo Linkstation LS-WSXL";
++
++	chosen {
++		bootargs = "console=ttyS0,115200n8 earlyprintk ubi.mtd=rootfs root=/dev/ubiblock0_1 rootwait";
++		stdout-path = &uart0;
++	};
++
++	aliases {
++	       gpio0 = &gpio0;
++	       gpio1 = &gpio1;
++	       i2c0 = &i2c0;
++	};
++
++	memory@0 { /* 128 MB */
++		name = "memory";
++		device_type = "memory";
++		reg = <0x00000000 0x8000000>;
++	};
++
++	cpus {
++		#address-cells = <0x01>;
++		#size-cells = <0x00>;
++
++		cpu@0 {
++			device_type = "cpu";
++			compatible = "marvell,feroceon";
++			reg = <0x00>;
++			clocks = <&core_clk 1>, <&core_clk 3>, <&gate_clk 11>;
++			clock-names = "cpu_clk", "ddrclk", "powersave";
++		};
++	};
++
++	mbus@f1000000 {
++		compatible = "marvell,kirkwood-mbus", "simple-bus";
++		#address-cells = <0x02>;
++		#size-cells = <0x01>;
++		/* If a board file needs to change this ranges it must replace it completely */
++		ranges = <MBUS_ID(0xf0, 0x01) 0 0xf1000000 0x100000	/* internal-regs */
++			  MBUS_ID(0x01, 0x2f) 0 0xf4000000 0x10000	/* nand flash */
++			  MBUS_ID(0x03, 0x01) 0 0xf5000000 0x10000	/* crypto sram */
++			  >;
++		controller = <&mbusc>;
++		pcie-mem-aperture = <0xe0000000 0x10000000>; /* 256 MiB memory space */
++		pcie-io-aperture  = <0xf2000000 0x100000>;   /*   1 MiB    I/O space */
++
++		nand: nand@12f {
++			#address-cells = <1>;
++			#size-cells = <1>;
++			cle = <0>;
++			ale = <1>;
++			bank-width = <1>;
++			compatible = "marvell,orion-nand";
++			reg = <MBUS_ID(0x01, 0x2f) 0 0x400>;
++			chip-delay = <25>;
++			/* set partition map and/or chip-delay in board dts */
++			clocks = <&gate_clk 7>;
++			pinctrl-0 = <&pmx_nand>;
++			pinctrl-names = "default";
++			status = "disabled";
++		};
++
++		crypto_sram: sa-sram@301 {
++			compatible = "mmio-sram";
++			reg = <MBUS_ID(0x03, 0x01) 0x0 0x800>;
++			clocks = <&gate_clk 17>;
++			#address-cells = <1>;
++			#size-cells = <1>;
++		};
++
++		pciec: pcie@82000000 {
++			compatible = "marvell,kirkwood-pcie";
++			status = "okay";
++			device_type = "pci";
++			#address-cells = <0x03>;
++			#size-cells = <0x02>;
++			bus-range = <0x00 0xff>;
++
++			ranges =
++			       <0x82000000 0 0x40000 MBUS_ID(0xf0, 0x01) 0x40000 0 0x00002000
++				0x82000000 0x1 0     MBUS_ID(0x04, 0xe8) 0       1 0 /* Port 0.0 MEM */
++				0x81000000 0x1 0     MBUS_ID(0x04, 0xe0) 0       1 0 /* Port 0.0 IO  */>;
++
++			pcie0: pcie@1,0 {
++				device_type = "pci";
++				assigned-addresses = <0x82000800 0 0x00040000 0 0x2000>;
++				reg = <0x0800 0 0 0 0>;
++				#address-cells = <3>;
++				#size-cells = <2>;
++				#interrupt-cells = <1>;
++				ranges = <0x82000000 0 0 0x82000000 0x1 0 1 0
++					  0x81000000 0 0 0x81000000 0x1 0 1 0>;
++				bus-range = <0x00 0xff>;
++				interrupt-map-mask = <0 0 0 0>;
++				interrupt-map = <0 0 0 0 &intc 9>;
++				marvell,pcie-port = <0>;
++				marvell,pcie-lane = <0>;
++				clocks = <&gate_clk 2>;
++				status = "okay";
++			};
++		};
++	};
++
++	ocp@f1000000 {
++		compatible = "simple-bus";
++		ranges = <0x00 0xf1000000 0x100000>;
++		#address-cells = <0x01>;
++		#size-cells = <0x01>;
++
++		pinctrl: pin-controller@10000 {
++			reg = <0x10000 0x20>;
++			compatible = "marvell,88f6281-pinctrl";
++
++			pmx_ge1: pmx-ge1 {
++				marvell,pins = "mpp20", "mpp21", "mpp22", "mpp23",
++					       "mpp24", "mpp25", "mpp26", "mpp27",
++					       "mpp30", "mpp31", "mpp32", "mpp33";
++				marvell,function = "ge1";
++			};
++
++			pmx_nand: pmx-nand {
++				marvell,pins = "mpp0", "mpp1", "mpp2", "mpp3",
++					       "mpp4", "mpp5", "mpp18", "mpp19";
++				marvell,function = "nand";
++			};
++
++			/*
++			 * Default SPI0 pinctrl setting with CSn on mpp0,
++			 * overwrite marvell,pins on board level if required.
++			 */
++			pmx_spi: pmx-spi {
++				marvell,pins = "mpp0", "mpp1", "mpp2", "mpp3";
++				marvell,function = "spi";
++			};
++
++			pmx_twsi0: pmx-twsi0 {
++				marvell,pins = "mpp8", "mpp9";
++				marvell,function = "twsi0";
++			};
++
++			/*
++			 * Default UART pinctrl setting without RTS/CTS,
++			 * overwrite marvell,pins on board level if required.
++			 */
++			pmx_uart0: pmx-uart0 {
++				marvell,pins = "mpp10", "mpp11";
++				marvell,function = "uart0";
++			};
++
++			pmx_uart1: pmx-uart1 {
++				marvell,pins = "mpp13", "mpp14";
++				marvell,function = "uart1";
++			};
++
++			pmx_sata0: pmx-sata0 {
++				marvell,pins = "mpp5", "mpp21", "mpp23";
++				marvell,function = "sata0";
++			};
++
++			pmx_sata1: pmx-sata1 {
++				marvell,pins = "mpp4", "mpp20", "mpp22";
++				marvell,function = "sata1";
++			};
++
++			pmx_sdio: pmx-sdio {
++				marvell,pins = "mpp12", "mpp13", "mpp14",
++					       "mpp15", "mpp16", "mpp17";
++			};
++
++			pmx_power_hdd0: pmx-power-hdd0 {
++				marvell,function = "gpio";
++				marvell,pins = "mpp28";
++			};
++
++			pmx_usb_vbus: pmx-usb-vbus {
++				marvell,function = "gpio";
++				marvell,pins = "mpp37";
++			};
++
++			pmx_led_alarm: pmx-led-alarm {
++				marvell,function = "gpio";
++				marvell,pins = "mpp49";
++			};
++
++			pmx_led_function_red: pmx-led-function-red {
++				marvell,function = "gpio";
++				marvell,pins = "mpp34";
++			};
++
++			pmx_led_function_blue: pmx-led-function-blue {
++				marvell,function = "gpio";
++				marvell,pins = "mpp36";
++			};
++
++			pmx_led_info: pmx-led-info {
++				marvell,function = "gpio";
++				marvell,pins = "mpp38";
++			};
++
++			pmx_led_power: pmx-led-power {
++				marvell,function = "gpio";
++				marvell,pins = "mpp39";
++			};
++
++			pmx_button_function: pmx-button-function {
++				marvell,function = "gpio";
++				marvell,pins = "mpp41";
++			};
++
++			pmx_power_switch: pmx-power-switch {
++				marvell,function = "gpio";
++				marvell,pins = "mpp42";
++			};
++
++			pmx_power_auto_switch: pmx-power-auto-switch {
++				marvell,function = "gpio";
++				marvell,pins = "mpp43";
++			};
++
++			pmx_power_hdd1: pmx-power-hdd1 {
++				marvell,pins = "mpp35";
++				marvell,function = "gpio";
++			};
++		};
++
++		core_clk: core-clocks@10030 {
++			compatible = "marvell,kirkwood-core-clock";
++			reg = <0x10030 0x04>;
++			#clock-cells = <0x01>;
++		};
++
++		spi0: spi@10600 {
++			compatible = "marvell,orion-spi";
++			#address-cells = <1>;
++			#size-cells = <0>;
++			cell-index = <0>;
++			interrupts = <23>;
++			reg = <0x10600 0x28>;
++			clocks = <&gate_clk 7>;
++			pinctrl-0 = <&pmx_spi>;
++			pinctrl-names = "default";
++			status = "okay";
++
++			w25q128@0 {
++				#address-cells = <0x01>;
++				#size-cells = <0x01>;
++				compatible = "winbond,w25q128", "jedec,spi-nor";
++				reg = <0x00>;
++				spi-max-frequency = <50000000>;
++				mode = <0x00>;
++
++				partition@0 {
++					reg = <0x00 0x70000>;
++					label = "uboot";
++					read-only;
++				};
++
++				partition@7E000 {
++					reg = <0x70000 0x10000>;
++					label = "uboot_env";
++				};
++
++				rootfs:partition@80000 {
++					reg = <0x80000 0xF80000>;
++					label = "rootfs";
++				};
++			};
++		};
++
++		gpio0: gpio@10100 {
++			compatible = "marvell,orion-gpio";
++			#gpio-cells = <2>;
++			gpio-controller;
++			reg = <0x10100 0x40>;
++			ngpios = <32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++			interrupts = <35>, <36>, <37>, <38>;
++			clocks = <&gate_clk 7>;
++		};
++
++		gpio1: gpio@10140 {
++			compatible = "marvell,orion-gpio";
++			#gpio-cells = <2>;
++			gpio-controller;
++			reg = <0x10140 0x40>;
++			ngpios = <18>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++			interrupts = <39>, <40>, <41>;
++			clocks = <&gate_clk 7>;
++		};
++
++		i2c0: i2c@11000 {
++			compatible = "marvell,mv64xxx-i2c";
++			reg = <0x11000 0x20>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupts = <29>;
++			clock-frequency = <100000>;
++			clocks = <&gate_clk 7>;
++			pinctrl-0 = <&pmx_twsi0>;
++			pinctrl-names = "default";
++			status = "disabled";
++		};
++
++		uart0: serial@12000 {
++			compatible = "ns16550a";
++			reg = <0x12000 0x100>;
++			reg-shift = <2>;
++			interrupts = <33>;
++			clocks = <&gate_clk 7>;
++			pinctrl-0 = <&pmx_uart0>;
++			pinctrl-names = "default";
++			status = "okay";
++		};
++
++		uart1: serial@12100 {
++			compatible = "ns16550a";
++			reg = <0x12100 0x100>;
++			reg-shift = <2>;
++			interrupts = <34>;
++			clocks = <&gate_clk 7>;
++			pinctrl-0 = <&pmx_uart1>;
++			pinctrl-names = "default";
++			status = "disabled";
++		};
++
++		mbusc: mbus-controller@20000 {
++			compatible = "marvell,mbus-controller";
++			reg = <0x20000 0x80 0x1500 0x20>;
++		};
++
++		sysc: system-controller@20000 {
++			compatible = "marvell,orion-system-controller";
++			reg = <0x20000 0x120>;
++		};
++
++		bridge_intc: bridge-interrupt-ctrl@20110 {
++			compatible = "marvell,orion-bridge-intc";
++			interrupt-controller;
++			#interrupt-cells = <1>;
++			reg = <0x20110 0x8>;
++			interrupts = <1>;
++			marvell,#interrupts = <6>;
++		};
++
++		gate_clk: clock-gating-control@2011c {
++			compatible = "marvell,kirkwood-gating-clock";
++			reg = <0x2011c 0x4>;
++			clocks = <&core_clk 0>;
++			#clock-cells = <1>;
++		};
++
++		l2: l2-cache@20128 {
++			compatible = "marvell,kirkwood-cache";
++			reg = <0x20128 0x4>;
++		};
++
++		intc: main-interrupt-ctrl@20200 {
++			compatible = "marvell,orion-intc";
++			interrupt-controller;
++			#interrupt-cells = <1>;
++			reg = <0x20200 0x10>, <0x20210 0x10>;
++		};
++
++		timer: timer@20300 {
++			compatible = "marvell,orion-timer";
++			reg = <0x20300 0x20>;
++			interrupt-parent = <&bridge_intc>;
++			interrupts = <1>, <2>;
++			clocks = <&core_clk 0>;
++		};
++
++		wdt: watchdog-timer@20300 {
++			compatible = "marvell,orion-wdt";
++			reg = <0x20300 0x28>, <0x20108 0x4>;
++			interrupt-parent = <&bridge_intc>;
++			interrupts = <3>;
++			clocks = <&gate_clk 7>;
++			status = "okay";
++		};
++
++		cesa: crypto@30000 {
++			compatible = "marvell,kirkwood-crypto";
++			reg = <0x30000 0x10000>;
++			reg-names = "regs";
++			interrupts = <22>;
++			clocks = <&gate_clk 17>;
++			marvell,crypto-srams = <&crypto_sram>;
++			marvell,crypto-sram-size = <0x800>;
++			status = "okay";
++		};
++
++		usb0: ehci@50000 {
++			compatible = "marvell,orion-ehci";
++			reg = <0x50000 0x1000>;
++			interrupts = <19>;
++			clocks = <&gate_clk 3>;
++			status = "okay";
++		};
++
++		dma0: xor@60800 {
++			compatible = "marvell,orion-xor";
++			reg = <0x60800 0x100
++			       0x60A00 0x100>;
++			status = "okay";
++			clocks = <&gate_clk 8>;
++
++			xor00 {
++			      interrupts = <5>;
++			      dmacap,memcpy;
++			      dmacap,xor;
++			};
++
++			xor01 {
++			      interrupts = <6>;
++			      dmacap,memcpy;
++			      dmacap,xor;
++			      dmacap,memset;
++			};
++		};
++
++		dma1: xor@60900 {
++			compatible = "marvell,orion-xor";
++			reg = <0x60900 0x100
++			       0x60B00 0x100>;
++			status = "okay";
++			clocks = <&gate_clk 16>;
++
++			xor00 {
++			      interrupts = <7>;
++			      dmacap,memcpy;
++			      dmacap,xor;
++			};
++
++			xor01 {
++			      interrupts = <8>;
++			      dmacap,memcpy;
++			      dmacap,xor;
++			      dmacap,memset;
++			};
++		};
++
++		eth0: ethernet-controller@72000 {
++			compatible = "marvell,kirkwood-eth";
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0x72000 0x4000>;
++			clocks = <&gate_clk 0>;
++			marvell,tx-checksum-limit = <1600>;
++			status = "disabled";
++
++			eth0port: ethernet0-port@0 {
++				compatible = "marvell,kirkwood-eth-port";
++				reg = <0>;
++				interrupts = <11>;
++				/* overwrite MAC address in bootloader */
++				local-mac-address = [00 00 00 00 00 00];
++				/* set phy-handle property in board file */
++			};
++		};
++
++		mdio: mdio-bus@72004 {
++			compatible = "marvell,orion-mdio";
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0x72004 0x84>;
++			interrupts = <46>;
++			clocks = <&gate_clk 0>;
++			status = "okay";
++
++			ethphy1: ethernet-phy@8 {
++				device_type = "ethernet-phy";
++				reg = <0x08>;
++			};
++		};
++
++		eth1: ethernet-controller@76000 {
++			compatible = "marvell,kirkwood-eth";
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0x76000 0x4000>;
++			clocks = <&gate_clk 19>;
++			marvell,tx-checksum-limit = <1600>;
++			pinctrl-0 = <&pmx_ge1>;
++			pinctrl-names = "default";
++			status = "okay";
++
++			eth1port: ethernet1-port@0 {
++				compatible = "marvell,kirkwood-eth-port";
++				reg = <0>;
++				interrupts = <15>;
++				/* overwrite MAC address in bootloader */
++				local-mac-address = [00 00 00 00 00 00];
++				/* set phy-handle property in board file */
++				phy-handle = <&ethphy1>;
++			};
++		};
++
++		sata_phy0: sata-phy@82000 {
++			compatible = "marvell,mvebu-sata-phy";
++			reg = <0x82000 0x0334>;
++			clocks = <&gate_clk 14>;
++			clock-names = "sata";
++			#phy-cells = <0>;
++			status = "ok";
++		};
++
++		sata_phy1: sata-phy@84000 {
++			compatible = "marvell,mvebu-sata-phy";
++			reg = <0x84000 0x0334>;
++			clocks = <&gate_clk 15>;
++			clock-names = "sata";
++			#phy-cells = <0>;
++			status = "ok";
++		};
++
++		audio0: audio-controller@a0000 {
++			compatible = "marvell,kirkwood-audio";
++			#sound-dai-cells = <0>;
++			reg = <0xa0000 0x2210>;
++			interrupts = <24>;
++			clocks = <&gate_clk 9>;
++			clock-names = "internal";
++			status = "disabled";
++		};
++
++
++		rtc: rtc@10300 {
++			compatible = "marvell,kirkwood-rtc", "marvell,orion-rtc";
++			reg = <0x10300 0x20>;
++			interrupts = <53>;
++			clocks = <&gate_clk 7>;
++		};
++
++
++		sata: sata@80000 {
++			compatible = "marvell,orion-sata";
++			reg = <0x80000 0x5000>;
++			interrupts = <21>;
++			clocks = <&gate_clk 14>, <&gate_clk 15>;
++			clock-names = "0", "1";
++			phys = <&sata_phy0>, <&sata_phy1>;
++			phy-names = "port0", "port1";
++			status = "okay";
++			nr-ports = <0x02>;
++		};
++
++		sdio: mvsdio@90000 {
++			compatible = "marvell,orion-sdio";
++			reg = <0x90000 0x200>;
++			interrupts = <28>;
++			clocks = <&gate_clk 4>;
++			pinctrl-0 = <&pmx_sdio>;
++			pinctrl-names = "default";
++			bus-width = <4>;
++			cap-sdio-irq;
++			cap-sd-highspeed;
++			cap-mmc-highspeed;
++			status = "disabled";
++		};
++	};
++
++	gpio_keys {
++		compatible = "gpio-keys";
++		#address-cells = <0x01>;
++		#size-cells = <0x00>;
++		pinctrl-0 = <&pmx_button_function &pmx_power_switch
++			     &pmx_power_auto_switch>;
++		pinctrl-names = "default";
++
++		function-button {
++			label = "Function Button";
++			linux,code = <KEY_OPTION>;
++			gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
++		};
++
++		power-on-switch {
++			label = "Power-on Switch";
++			linux,code = <KEY_RESERVED>;
++			linux,input-type = <0x05>;
++			gpios = <&gpio1 10 GPIO_ACTIVE_LOW>;
++		};
++
++		power-auto-switch {
++			label = "Power-auto Switch";
++			linux,code = <KEY_ESC>;
++			linux,input-type = <0x05>;
++			gpios = <&gpio1 11 GPIO_ACTIVE_LOW>;
++		};
++	};
++
++	gpio_leds {
++		compatible = "gpio-leds";
++		pinctrl-0 = <&pmx_led_function_red &pmx_led_alarm
++			     &pmx_led_info &pmx_led_power
++			     &pmx_led_function_blue>;
++		pinctrl-names = "default";
++
++		red-alarm-led {
++			label = "linkstation:red:alarm";
++			gpios = <&gpio1 17 GPIO_ACTIVE_LOW>;
++		};
++
++		red-function-led {
++			label = "linkstation:red:function";
++			gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>;
++		};
++
++		amber-info-led {
++			label = "linkstation:amber:info";
++			gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
++		};
++
++		blue-function-led {
++			label = "linkstation:blue:function";
++			gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
++		};
++
++		blue-power-led {
++			label = "linkstation:blue:power";
++			gpios = <&gpio1 7 GPIO_ACTIVE_HIGH>;
++			default-state = "keep";
++		};
++	};
++
++	restart_poweroff {
++		compatible = "restart-poweroff";
++	};
++
++	regulators {
++		compatible = "simple-bus";
++		#address-cells = <0x01>;
++		#size-cells = <0x00>;
++		pinctrl-0 = <&pmx_power_hdd0 &pmx_power_hdd1 &pmx_usb_vbus>;
++		pinctrl-names = "default";
++
++		usb_power: regulator@1 {
++			compatible = "regulator-fixed";
++			reg = <1>;
++			regulator-name = "USB Power";
++			regulator-min-microvolt = <5000000>;
++			regulator-max-microvolt = <5000000>;
++			enable-active-high;
++			regulator-always-on;
++			regulator-boot-on;
++			gpio = <&gpio1 5 GPIO_ACTIVE_HIGH>;
++		};
++
++		hdd_power0: regulator@2 {
++			compatible = "regulator-fixed";
++			reg = <2>;
++			regulator-name = "HDD0 Power";
++			regulator-min-microvolt = <5000000>;
++			regulator-max-microvolt = <5000000>;
++			enable-active-high;
++			regulator-always-on;
++			regulator-boot-on;
++			gpio = <&gpio0 28 GPIO_ACTIVE_HIGH>;
++		};
++
++		hdd_power1: regulator@3 {
++			compatible = "regulator-fixed";
++			reg = <3>;
++			regulator-name = "HDD1 Power";
++			regulator-min-microvolt = <5000000>;
++			regulator-max-microvolt = <5000000>;
++			enable-active-high;
++			regulator-always-on;
++			regulator-boot-on;
++			gpio = <&gpio1 3 GPIO_ACTIVE_HIGH>;
++		};
++	};
++};
+diff --git a/arch/arm/mach-kirkwood/Kconfig b/arch/arm/mach-kirkwood/Kconfig
+index 54027ccb0e..6cd6ed2645 100644
+--- a/arch/arm/mach-kirkwood/Kconfig
++++ b/arch/arm/mach-kirkwood/Kconfig
+@@ -143,6 +143,15 @@ config TARGET_SBx81LIFXCAT
+ 	select FEROCEON_88FR131
+ 	select KW88F6281
+ 
++config TARGET_LSWSXL
++        bool "lswsxl Board"
++        select FEROCEON_88FR131
++        select KW88F6281
++        select BOARD_EARLY_INIT_R
++        select MISC_INIT_R
++        select KIRKWOOD_COMMON
++
++
+ endchoice
+ 
+ config SYS_SOC
+@@ -179,5 +188,6 @@ source "board/Seagate/nas220/Kconfig"
+ source "board/zyxel/nsa310s/Kconfig"
+ source "board/alliedtelesis/SBx81LIFKW/Kconfig"
+ source "board/alliedtelesis/SBx81LIFXCAT/Kconfig"
++source "board/buffalo/lswsxl/Kconfig"
+ 
+ endif
+diff --git a/board/buffalo/lswsxl/Kconfig b/board/buffalo/lswsxl/Kconfig
+new file mode 100644
+index 0000000000..fbcba1cbe5
+--- /dev/null
++++ b/board/buffalo/lswsxl/Kconfig
+@@ -0,0 +1,12 @@
++if TARGET_LSWSXL
++
++config SYS_BOARD
++	default "lswsxl"
++
++config SYS_VENDOR
++	default "buffalo"
++
++config SYS_CONFIG_NAME
++	default "lswsxl"
++
++endif
+diff --git a/board/buffalo/lswsxl/MAINTAINERS b/board/buffalo/lswsxl/MAINTAINERS
+new file mode 100644
+index 0000000000..3347d07760
+--- /dev/null
++++ b/board/buffalo/lswsxl/MAINTAINERS
+@@ -0,0 +1,6 @@
++LSXL BOARD
++M:	Michael Walle <michael@walle.cc>
++S:	Maintained
++F:	board/buffalo/lswsxl/
++F:	include/configs/lswsxl.h
++F:	configs/lswsxl_defconfig
+\ No newline at end of file
+diff --git a/board/buffalo/lswsxl/Makefile b/board/buffalo/lswsxl/Makefile
+new file mode 100644
+index 0000000000..5766ca4e18
+--- /dev/null
++++ b/board/buffalo/lswsxl/Makefile
+@@ -0,0 +1,6 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# Copyright (c) 2012 Michael Walle
++# Michael Walle <michael@walle.cc>
++
++obj-y	:= lswsxl.o
+diff --git a/board/buffalo/lswsxl/README b/board/buffalo/lswsxl/README
+new file mode 100644
+index 0000000000..fffb1ce8ec
+--- /dev/null
++++ b/board/buffalo/lswsxl/README
+@@ -0,0 +1,149 @@
++Intro
++-----
++The Buffalo Linkstation Pro/Live, codename LS-XHL and LS-CHLv2, is a single
++disk NAS server. The PCBs of the LS-XHL and LS-CHLv2 are almost the same.
++The LS-XHL has a faster CPU and more RAM with a wider data bus, therefore
++the LS-XHL PCB has two SDRAM chips. Both have a Kirkwood CPU (Marvell
++88F6281). The only on-board storage is a 4 Mbit SPI flash which stores the
++bootloader and its environment. The linux kernel and the initial ramdisk
++are loaded from the hard disk.
++
++Important! Changes since v2019.07
++---------------------------------
++In u-boot v2019.07 the driver for the SATA port was changed to a new
++one. This means that the old "ide" command and block interface is not
++supported anymore. More important, the boot commands have changed. You have
++to overwrite the boot commands in your envionment with the new ones:
++
++  env default -f bootcmd_legacy
++  env default -f bootcmd_hdd
++  saveenv
++
++Rescue Mode
++-----------
++These linkstations don't have a populated serial port. There is no way to
++access an (unmodified) board other than using the netconsole. If you want
++to recover from a bad environment setting or an empty environment, you can
++do this only with a working network connection.
++
++Therefore, on entering the resuce mode, a random ethernet address is
++generated if no valid address could be loaded from the environment variable
++'ethaddr' and a DHCP request is sent. After a successful DHCP response is
++received, the network settings are configured and the ncip is unset. Thus
++all netconsole packets are broadcasted and you can use the netconsole to
++access board from any host within the network segment. To determine the IP
++address assigned to the board, you either have to sniff the traffic or
++check the logs/leases of your DHCP server.
++
++The resuce mode is selected by holding the push button for at least one
++second, while powering-on the device. The status LED turns solid amber if
++the resuce mode is enabled, thus providing a visual feedback.
++
++Pressing the same button for at least 10 seconds on power-up will erase the
++environment and reset the board. In this case the visual indication will
++be:
++- blinking blue, for about one second
++- solid amber, for about nine seconds
++- blinking amber, until you release the button
++
++This ensures, that you still can recover a device with a broken
++environment by first erasing the environment and then entering the rescue
++mode.
++
++Once the rescue mode is started, use the ncb binary from the tools/
++directory to access your board. There is a helper script named
++'restore_env' to save your changes. It unsets all the network variables
++which were set by the rescue mode, saves your changes and then resets the
++board.
++
++The common use case for this is setting a MAC address. Let us assume you
++have an empty environment, the board comes up with the amber LED blinking.
++Then you enter the rescue mode, connect to the board with the ncb tool and
++use the following commands to set your MAC address:
++
++  setenv ethaddr 00:00:00:00:00:00
++  run restore_env
++
++Of course you need to replace the 00:00:00:00:00:00 with your valid MAC
++address, which can be found on a sticker on the bottom of your box.
++
++
++Status LED
++----------
++blinking blue
++  Bootloader is running normally.
++
++blinking amber
++  No ethaddr set. Use the `Rescue Mode` to set one.
++
++blinking red
++  Something bad happend during loading the operating system.
++
++The default behavior of the linux kernel is to turn on the blue LED. So if
++the blinking blue LED changes to solid blue the kernel was loaded
++successfully.
++
++
++Power-on Switch
++---------------
++The power-on switch is a software switch. If it is not in ON position when
++the bootloader starts, the bootloader will disable the HDD and USB power
++and stop the fan. Then it loops until the switch is in ON position again,
++enables the power and fan again and continue booting.
++
++
++Boot sources
++------------
++The environment defines several different boot sources:
++
++legacy
++  This is the default boot source. It loads the kernel and ramdisk from the
++  attached HDD using the original filenames. The load addresses were
++  modified to support loading larger kernels. But it should behave the same
++  as the original bootloader.
++
++hdd
++  Use this for new-style booting. Loads three files /vmlinuz, /initrd.img
++  and /dtb from the boot partition. This should work out of the box if you
++  have debian and the flash-kernel package installed.
++
++usb
++  Same as hdd expect, that the files are loaded from an attached USB mass
++  storage device and the filename for the device tree is kirkwood-lsxhl.dtb
++  (or kirkwood-lschlv2.dtb).
++
++net
++  Same as usb expect, that the file are loaded from the network.
++
++rescue
++  Automatically activated if the push button is pressed for at least one
++  second on power-up. Does a DHCP request and enables the network console.
++  See `Rescue Mode` for more information.
++
++You can change the boot source by setting the 'bootsource' variable to the
++corresponding value. Please note, that the restore_env script will the the
++bootsource back to 'legacy'.
++
++
++Flash map
++---------
++00000 - 5ffff   u-boot
++60000 - 6ffff   reserved, may be used to store dtb
++70000 - 7ffff   u-boot environment
++
++
++Compiling
++---------
++make lsxhl_config (or lschlv2_config)
++make u-boot.kwb
++
++
++Update your board
++-----------------
++Just flash the resulting u-boot.kwb to the beginning of the SPI flash. If
++you already have a bootloader CLI, you can use the following commands:
++
++ sf probe 0
++ bootp ${loadaddr} u-boot.kwb
++ sf erase 0 +${filelen}
++ sf write 0 ${fileaddr} ${filesize}
+diff --git a/board/buffalo/lswsxl/kwbimage-lswsxl.cfg b/board/buffalo/lswsxl/kwbimage-lswsxl.cfg
+new file mode 100644
+index 0000000000..cc7894ae75
+--- /dev/null
++++ b/board/buffalo/lswsxl/kwbimage-lswsxl.cfg
+@@ -0,0 +1,213 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# Copyright (c) 2012 Michael Walle
++# Michael Walle <michael@walle.cc>
++# Refer doc/README.kwbimage for more details about how-to configure
++# and create kirkwood boot image
++#
++
++# Boot Media configurations
++BOOT_FROM spi
++
++# SOC registers configuration using bootrom header extension
++# Maximum KWBIMAGE_MAX_CONFIG configurations allowed
++
++# Configure RGMII-0/1 interface pad voltage to 1.8V
++DATA 0xFFD100E0 0x1B1B9B9B
++
++# L2 RAM Timing 0
++DATA 0xFFD20134 0xBBBBBBBB
++# not further specified in HW manual, timing taken from original vendor port
++
++# L2 RAM Timing 1
++DATA 0xFFD20138 0x00BBBBBB
++# not further specified in HW manual, timing taken from original vendor port
++
++# DDR Configuration register
++DATA 0xFFD01400 0x43000618
++# bit13-0:  0x618, 1560 DDR2 clks refresh rate
++# bit23-14: 0 required
++# bit24:    1, enable exit self refresh mode on DDR access
++# bit25:    1 required
++# bit29-26: 0 required
++# bit31-30: 0b01 required
++
++# DDR Controller Control Low
++DATA 0xFFD01404 0x39543000
++# bit3-0:   0 required
++# bit4:     1, T2 mode, addr/cmd are driven for two cycles
++# bit5:     0, clk is driven during self refresh, we don't care for APX
++# bit6:     0, use recommended falling edge of clk for addr/cmd
++# bit11-7:  0 required
++# bit12:    1 required
++# bit13:    1 required
++# bit14:    0, input buffer always powered up
++# bit17-15: 0 required
++# bit18:    1, cpu lock transaction enabled
++# bit19:    0 required
++# bit23-20: 5, recommended value for CL=5 and STARTBURST_DEL disabled bit31=0
++# bit27-24: 9, CL+4, STARTBURST sample stages, for freqs 400MHz, unbuffered DIMM
++# bit30-28: 3 required
++# bit31:    0, no additional STARTBURST delay
++
++# DDR Timing (Low)
++DATA 0xFFD01408 0x3302444f
++# bit3-0:   0x1, 18 cycle tRAS (tRAS[3-0])
++# bit7-4:   4, 5 cycle tRCD
++# bit11-8:  4, 5 cyle tRP
++# bit15-12: 5, 6 cyle tWR
++# bit19-16: 2, 3 cyle tWTR
++# bit20:    1, 18 cycle tRAS (tRAS[4])
++# bit23-21: 0 required
++# bit27-24: 2, 3 cycle tRRD
++# bit31-28: 2, 3 cyle tRTP
++
++# DDR Timing (High)
++DATA 0xFFD0140C 0x00000823
++# bit6-0:   0x32, 50 cycle tRFC
++# bit8-7:   0, 1 cycle tR2R
++# bit10-9:  0, 1 cyle tR2W
++# bit12-11: 1, 2 cylce tW2W
++# bit31-13: 0 required
++
++# DDR Address Control
++DATA 0xFFD01410 0x00000099
++# bit1-0:   0, Cs0width=x8
++# bit3-2:   3, Cs0size=1Gbit
++# bit5-4:   0, Cs1width=nonexistent
++# bit7-6:   0, Cs1size=nonexistent
++# bit9-8:   0, Cs2width=nonexistent
++# bit11-10: 0, Cs2size=nonexistent
++# bit13-12: 0, Cs3width=nonexistent
++# bit15-14: 0, Cs3size=nonexistent
++# bit16:    0, Cs0AddrSel
++# bit17:    0, Cs1AddrSel
++# bit18:    0, Cs2AddrSel
++# bit19:    0, Cs3AddrSel
++# bit31-20: 0 required
++
++# DDR Open Pages Control
++DATA 0xFFD01414 0x00000000
++# bit0:    0, OPEn=OpenPage enabled
++# bit31-1: 0 required
++
++# DDR Operation
++DATA 0xFFD01418 0x00000000
++# bit3-0:   0, Cmd=Normal SDRAM Mode
++# bit31-4:  0 required
++
++# DDR Mode
++DATA 0xFFD0141C 0x00000652
++# bit2-0:   2, Burst Length (2 required)
++# bit3:     0, Burst Type (0 required)
++# bit6-4:   5, CAS Latency (CL) 5
++# bit7:     0, (Test Mode) Normal operation
++# bit8:     0, (Reset DLL) Normal operation
++# bit11-9:  3, Write recovery for auto-precharge (3 required)
++# bit12:    0, Fast Active power down exit time (0 required)
++# bit31-13: 0 required
++
++# DDR Extended Mode
++DATA 0xFFD01420 0x00000042
++# bit0:     0, DRAM DLL enabled
++# bit1:     1, DRAM drive strength reduced
++# bit2:     1, ODT control Rtt[0] (Rtt=1, 75 ohm termination)
++# bit5-3:   0 required
++# bit6:     0, ODT control Rtt[1] (Rtt=1, 75 ohm termination)
++# bit9-7:   0 required
++# bit10:    0, differential DQS enabled
++# bit11:    0 required
++# bit12:    0, DRAM output buffer enabled
++# bit31-13: 0 required
++
++# DDR Controller Control High
++DATA 0xFFD01424 0x0000F1FF
++# bit2-0:   0x7 required
++# bit3:     1, MBUS Burst Chop disabled
++# bit6-4:   0x7 required
++# bit7:     0 required (???)
++# bit8:     1, add writepath sample stage, must be 1 for DDR freq >= 300MHz
++# bit9:     0, no half clock cycle addition to dataout
++# bit10:    0, 1/4 clock cycle skew enabled for addr/ctl signals
++# bit11:    0, 1/4 clock cycle skew disabled for write mesh
++# bit15-12: 0xf required
++# bit31-16: 0 required
++
++# DDR2 ODT Read Timing (default values)
++DATA 0xFFD01428 0x00085520
++# bit3-0:   0 required
++# bit7-4:   2, 2 cycles from read command to assertion of M_ODT signal
++# bit11-8:  5, 5 cycles from read command to de-assertion of M_ODT signal
++# bit15-12: 5, 5 cycles from read command to assertion of internal ODT signal
++# bit19-16: 8, 8 cycles from read command to de-assertion of internal ODT signal
++# bit31-20: 0 required
++
++# DDR2 ODT Write Timing (default values)
++DATA 0xFFD0147C 0x00008552
++# bit3-0:   2, 2 cycles from write comand to assertion of M_ODT signal
++# bit7-4:   5, 5 cycles from write command to de-assertion of M_ODT signal
++# bit15-12: 5, 5 cycles from write command to assertion of internal ODT signal
++# bit19-16: 8, 8 cycles from write command to de-assertion of internal ODT signal
++# bit31-16: 0 required
++
++# CS[0]n Base address
++DATA 0xFFD01500 0x00000000
++# at 0x0
++
++# CS[0]n Size
++DATA 0xFFD01504 0x03FFFFF1
++# bit0:     1, Window enabled
++# bit1:     0, Write Protect disabled
++# bit3-2:   0x0, CS0 hit selected
++# bit23-4:  0xfffff required
++# bit31-24: 0x0f, Size (i.e. 256MB)
++
++DATA 0xFFD01508 0x04000000
++
++# CS[1]n Size
++DATA 0xFFD0150C 0x03FFFFF5
++# window disabled
++
++# CS[2]n Size
++DATA 0xFFD01514 0x00000000
++# window disabled
++
++# CS[3]n Size
++DATA 0xFFD0151C 0x00000000
++# window disabled
++
++# DDR ODT Control (Low)
++DATA 0xFFD01494 0x003C0000
++# bit3-0:   0b0000, (read) M_ODT[0] is not asserted during read from DRAM
++# bit7-4:   0b0000, (read) M_ODT[1] is not asserted during read from DRAM
++# bit15-8:  0 required
++# bit19-16: 0b0001, (write) M_ODT[0] is asserted during write to DRAM CS0
++# bit23-20: 0b0000, (write) M_ODT[1] is not asserted during write to DRAM
++# bit31-24: 0 required
++
++# DDR ODT Control (High)
++DATA 0xFFD01498 0x00000000
++# bit1-0:   0, M_ODT[0] assertion is controlled by ODT Control Low register
++# bit3-2:   0, M_ODT[1] assertion is controlled by ODT Control Low register
++# bit31-4   0 required
++
++# CPU ODT Control
++DATA 0xFFD0149C 0x0000E80F
++# bit3-0:   0b1111, internal ODT is asserted during read from DRAM bank 0-3
++# bit7-4:   0b0000, internal ODT is not asserted during write to DRAM bank 0-3
++# bit9-8:   0, Internal ODT assertion is controlled by fiels
++# bit11-10: 2, M_DQ, M_DM, and M_DQS I/O buffer ODT 75 ohm
++# bit13-12: 2, M_STARTBURST_IN I/O buffer ODT 75 ohm
++# bit14:    1, M_STARTBURST_IN ODT enabled
++# bit15:    1, DDR IO ODT Unit: Drive ODT calibration values
++# bit20-16: 0, Pad N channel driving strength for ODT
++# bit25-21: 0, Pad P channel driving strength for ODT
++# bit31-26: 0 required
++
++# DDR Initialization Control
++DATA 0xFFD01480 0x00000001
++# bit0:     1, enable DDR init upon this register write
++# bit31-1:  0, required
++
++# End of Header extension
++DATA 0x0 0x0
+diff --git a/board/buffalo/lswsxl/kwbimage.cfg b/board/buffalo/lswsxl/kwbimage.cfg
+new file mode 100644
+index 0000000000..507ca8daa7
+--- /dev/null
++++ b/board/buffalo/lswsxl/kwbimage.cfg
+@@ -0,0 +1,213 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# Copyright (c) 2012 Michael Walle
++# Michael Walle <michael@walle.cc>
++# Refer doc/README.kwbimage for more details about how-to configure
++# and create kirkwood boot image
++#
++
++# Boot Media configurations
++BOOT_FROM spi
++
++# SOC registers configuration using bootrom header extension
++# Maximum KWBIMAGE_MAX_CONFIG configurations allowed
++
++# Configure RGMII-0/1 interface pad voltage to 1.8V
++DATA 0xFFD100E0 0x1B1B9B9B
++
++# L2 RAM Timing 0
++DATA 0xFFD20134 0xBBBBBBBB
++# not further specified in HW manual, timing taken from original vendor port
++
++# L2 RAM Timing 1
++DATA 0xFFD20138 0x00BBBBBB
++# not further specified in HW manual, timing taken from original vendor port
++
++# DDR Configuration register
++DATA 0xFFD01400 0x43020618
++# bit13-0:  0x618, 1560 DDR2 clks refresh rate
++# bit23-14: 0 required
++# bit24:    1, enable exit self refresh mode on DDR access
++# bit25:    1 required
++# bit29-26: 0 required
++# bit31-30: 0b01 required
++
++# DDR Controller Control Low
++DATA 0xFFD01404 0x39543000
++# bit3-0:   0 required
++# bit4:     1, T2 mode, addr/cmd are driven for two cycles
++# bit5:     0, clk is driven during self refresh, we don't care for APX
++# bit6:     0, use recommended falling edge of clk for addr/cmd
++# bit11-7:  0 required
++# bit12:    1 required
++# bit13:    1 required
++# bit14:    0, input buffer always powered up
++# bit17-15: 0 required
++# bit18:    1, cpu lock transaction enabled
++# bit19:    0 required
++# bit23-20: 5, recommended value for CL=5 and STARTBURST_DEL disabled bit31=0
++# bit27-24: 9, CL+4, STARTBURST sample stages, for freqs 400MHz, unbuffered DIMM
++# bit30-28: 3 required
++# bit31:    0, no additional STARTBURST delay
++
++# DDR Timing (Low)
++DATA 0xFFD01408 0x3302444f
++# bit3-0:   0x1, 18 cycle tRAS (tRAS[3-0])
++# bit7-4:   4, 5 cycle tRCD
++# bit11-8:  4, 5 cyle tRP
++# bit15-12: 5, 6 cyle tWR
++# bit19-16: 2, 3 cyle tWTR
++# bit20:    1, 18 cycle tRAS (tRAS[4])
++# bit23-21: 0 required
++# bit27-24: 2, 3 cycle tRRD
++# bit31-28: 2, 3 cyle tRTP
++
++# DDR Timing (High)
++DATA 0xFFD0140C 0x00000823
++# bit6-0:   0x32, 50 cycle tRFC
++# bit8-7:   0, 1 cycle tR2R
++# bit10-9:  0, 1 cyle tR2W
++# bit12-11: 1, 2 cylce tW2W
++# bit31-13: 0 required
++
++# DDR Address Control
++DATA 0xFFD01410 0x00000099
++# bit1-0:   0, Cs0width=x8
++# bit3-2:   3, Cs0size=1Gbit
++# bit5-4:   0, Cs1width=nonexistent
++# bit7-6:   0, Cs1size=nonexistent
++# bit9-8:   0, Cs2width=nonexistent
++# bit11-10: 0, Cs2size=nonexistent
++# bit13-12: 0, Cs3width=nonexistent
++# bit15-14: 0, Cs3size=nonexistent
++# bit16:    0, Cs0AddrSel
++# bit17:    0, Cs1AddrSel
++# bit18:    0, Cs2AddrSel
++# bit19:    0, Cs3AddrSel
++# bit31-20: 0 required
++
++# DDR Open Pages Control
++DATA 0xFFD01414 0x00000000
++# bit0:    0, OPEn=OpenPage enabled
++# bit31-1: 0 required
++
++# DDR Operation
++DATA 0xFFD01418 0x00000000
++# bit3-0:   0, Cmd=Normal SDRAM Mode
++# bit31-4:  0 required
++
++# DDR Mode
++DATA 0xFFD0141C 0x00000652
++# bit2-0:   2, Burst Length (2 required)
++# bit3:     0, Burst Type (0 required)
++# bit6-4:   5, CAS Latency (CL) 5
++# bit7:     0, (Test Mode) Normal operation
++# bit8:     0, (Reset DLL) Normal operation
++# bit11-9:  3, Write recovery for auto-precharge (3 required)
++# bit12:    0, Fast Active power down exit time (0 required)
++# bit31-13: 0 required
++
++# DDR Extended Mode
++DATA 0xFFD01420 0x00000040
++# bit0:     0, DRAM DLL enabled
++# bit1:     1, DRAM drive strength reduced
++# bit2:     1, ODT control Rtt[0] (Rtt=1, 75 ohm termination)
++# bit5-3:   0 required
++# bit6:     0, ODT control Rtt[1] (Rtt=1, 75 ohm termination)
++# bit9-7:   0 required
++# bit10:    0, differential DQS enabled
++# bit11:    0 required
++# bit12:    0, DRAM output buffer enabled
++# bit31-13: 0 required
++
++# DDR Controller Control High
++DATA 0xFFD01424 0x0000F1F7
++# bit2-0:   0x7 required
++# bit3:     1, MBUS Burst Chop disabled
++# bit6-4:   0x7 required
++# bit7:     0 required (???)
++# bit8:     1, add writepath sample stage, must be 1 for DDR freq >= 300MHz
++# bit9:     0, no half clock cycle addition to dataout
++# bit10:    0, 1/4 clock cycle skew enabled for addr/ctl signals
++# bit11:    0, 1/4 clock cycle skew disabled for write mesh
++# bit15-12: 0xf required
++# bit31-16: 0 required
++
++# DDR2 ODT Read Timing (default values)
++DATA 0xFFD01428 0x00085520
++# bit3-0:   0 required
++# bit7-4:   2, 2 cycles from read command to assertion of M_ODT signal
++# bit11-8:  5, 5 cycles from read command to de-assertion of M_ODT signal
++# bit15-12: 5, 5 cycles from read command to assertion of internal ODT signal
++# bit19-16: 8, 8 cycles from read command to de-assertion of internal ODT signal
++# bit31-20: 0 required
++
++# DDR2 ODT Write Timing (default values)
++DATA 0xFFD0147C 0x00008552
++# bit3-0:   2, 2 cycles from write comand to assertion of M_ODT signal
++# bit7-4:   5, 5 cycles from write command to de-assertion of M_ODT signal
++# bit15-12: 5, 5 cycles from write command to assertion of internal ODT signal
++# bit19-16: 8, 8 cycles from write command to de-assertion of internal ODT signal
++# bit31-16: 0 required
++
++# CS[0]n Base address
++DATA 0xFFD01500 0x00000000
++# at 0x0
++
++# CS[0]n Size
++DATA 0xFFD01504 0x03FFFFF1
++# bit0:     1, Window enabled
++# bit1:     0, Write Protect disabled
++# bit3-2:   0x0, CS0 hit selected
++# bit23-4:  0xfffff required
++# bit31-24: 0x0f, Size (i.e. 256MB)
++
++DATA 0xFFD01508 0x04000000
++
++# CS[1]n Size
++DATA 0xFFD0150C 0x03FFFFF5
++# window disabled
++
++# CS[2]n Size
++DATA 0xFFD01514 0x00000000
++# window disabled
++
++# CS[3]n Size
++DATA 0xFFD0151C 0x00000000
++# window disabled
++
++# DDR ODT Control (Low)
++DATA 0xFFD01494 0x003C0000
++# bit3-0:   0b0000, (read) M_ODT[0] is not asserted during read from DRAM
++# bit7-4:   0b0000, (read) M_ODT[1] is not asserted during read from DRAM
++# bit15-8:  0 required
++# bit19-16: 0b0001, (write) M_ODT[0] is asserted during write to DRAM CS0
++# bit23-20: 0b0000, (write) M_ODT[1] is not asserted during write to DRAM
++# bit31-24: 0 required
++
++# DDR ODT Control (High)
++DATA 0xFFD01498 0x00000000
++# bit1-0:   0, M_ODT[0] assertion is controlled by ODT Control Low register
++# bit3-2:   0, M_ODT[1] assertion is controlled by ODT Control Low register
++# bit31-4   0 required
++
++# CPU ODT Control
++DATA 0xFFD0149C 0x0000E80F
++# bit3-0:   0b1111, internal ODT is asserted during read from DRAM bank 0-3
++# bit7-4:   0b0000, internal ODT is not asserted during write to DRAM bank 0-3
++# bit9-8:   0, Internal ODT assertion is controlled by fiels
++# bit11-10: 2, M_DQ, M_DM, and M_DQS I/O buffer ODT 75 ohm
++# bit13-12: 2, M_STARTBURST_IN I/O buffer ODT 75 ohm
++# bit14:    1, M_STARTBURST_IN ODT enabled
++# bit15:    1, DDR IO ODT Unit: Drive ODT calibration values
++# bit20-16: 0, Pad N channel driving strength for ODT
++# bit25-21: 0, Pad P channel driving strength for ODT
++# bit31-26: 0 required
++
++# DDR Initialization Control
++DATA 0xFFD01480 0x00000001
++# bit0:     1, enable DDR init upon this register write
++# bit31-1:  0, required
++
++# End of Header extension
++DATA 0x0 0x0
+diff --git a/board/buffalo/lswsxl/lswsxl.c b/board/buffalo/lswsxl/lswsxl.c
+new file mode 100644
+index 0000000000..1ace4d4134
+--- /dev/null
++++ b/board/buffalo/lswsxl/lswsxl.c
+@@ -0,0 +1,296 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) 2012 Michael Walle
++ * Michael Walle <michael@walle.cc>
++ *
++ * Based on sheevaplug/sheevaplug.c by
++ *   Marvell Semiconductor <www.marvell.com>
++ */
++
++#include <common.h>
++#include <bootstage.h>
++#include <command.h>
++#include <env.h>
++#include <init.h>
++#include <spi.h>
++#include <spi_flash.h>
++#include <asm/arch/soc.h>
++#include <asm/arch/cpu.h>
++#include <asm/arch/mpp.h>
++#include <asm/arch/gpio.h>
++#include <asm/global_data.h>
++#include <asm/io.h>
++#include <linux/delay.h>
++
++#include "lswsxl.h"
++
++/*
++ * Rescue mode
++ *
++ * Selected by holding the push button for 3 seconds, while powering on
++ * the device.
++ *
++ * These linkstations don't have a (populated) serial port. There is no
++ * way to access an (unmodified) board other than using the netconsole. If
++ * you want to recover from a bad environment setting or an empty environment,
++ * you can do this only with a working network connection. Therefore, a random
++ * ethernet address is generated if none is set and a DHCP request is sent.
++ * After a successful DHCP response is received, the network settings are
++ * configured and the ncip is unset. Therefore, all netconsole packets are
++ * broadcasted.
++ * Additionally, the bootsource is set to 'rescue'.
++ */
++
++
++DECLARE_GLOBAL_DATA_PTR;
++
++int board_early_init_f(void)
++{
++	/*
++	 * default gpio configuration
++	 * There are maximum 64 gpios controlled through 2 sets of registers
++	 * the below configuration configures mainly initial LED status
++	 */
++	mvebu_config_gpio(LSWSXL_OE_VAL_LOW,
++			  LSWSXL_OE_VAL_HIGH,
++			  LSWSXL_OE_LOW, LSWSXL_OE_HIGH);
++
++	/*
++	 * Multi-Purpose Pins Functionality configuration
++	 * These strappings are taken from the original vendor uboot port.
++	 */
++	static const u32 kwmpp_config[] = {
++		MPP0_GPIO,
++		MPP1_SPI_MOSI,
++		MPP2_SPI_SCK,
++		MPP3_SPI_MISO,
++		MPP4_GPIO,
++		MPP5_GPO,
++		MPP6_SYSRST_OUTn,
++		MPP7_SPI_SCn,
++		MPP8_TW_SDA,
++		MPP9_TW_SCK,		
++		MPP10_UART0_TXD,
++		MPP11_UART0_RXD,
++		MPP12_SD_CLK,
++		MPP13_SD_CMD,
++		MPP14_SD_D0,
++		MPP15_SD_D1,
++		MPP16_SD_D2,
++		MPP17_SD_D3,
++		MPP18_GPO,		
++		MPP19_GPO,		
++		MPP20_GE1_0,
++		MPP21_GE1_1,
++		MPP22_GE1_2,
++		MPP23_GE1_3,
++		MPP24_GE1_4,
++		MPP25_GE1_5,
++		MPP26_GE1_6,
++		MPP27_GE1_7,
++		MPP28_GPIO,		/* SATA0 POWER */
++		MPP29_GPIO,		
++		MPP30_GE1_10,
++		MPP31_GE1_11,
++		MPP32_GE1_12,
++		MPP33_GE1_13,
++		MPP34_GPIO,		/* function LED red */
++		MPP35_GPIO,		/* SATA1 POWER */
++		MPP36_GPIO,		/* function LED blud */
++		MPP37_GPIO,		/* USB vbus */
++		MPP38_GPIO,		/* info LED */
++		MPP39_GPIO,		/* power LED */
++		MPP40_GPIO,		
++		MPP41_GPIO,		/* funtion button */
++		MPP42_GPIO,		/* power switch */
++		MPP43_GPIO,		/* power auto switch */
++		MPP44_GPIO,
++		MPP45_GPIO,
++		MPP46_GPIO,
++		MPP47_GPIO,
++		MPP48_GPIO,		
++		MPP49_GPIO,		/* alarm LED */
++		0
++	};
++
++	kirkwood_mpp_conf(kwmpp_config, NULL);
++
++	return 0;
++}
++
++#define LED_OFF             0
++#define LED_ALARM_ON        1
++#define LED_ALARM_BLINKING  2
++#define LED_POWER_ON        3
++#define LED_POWER_BLINKING  4
++#define LED_INFO_ON         5
++#define LED_INFO_BLINKING   6
++
++static void __set_led(int __led, int blink, int value)
++{
++	kw_gpio_set_blink(__led, blink);
++	kw_gpio_set_value(__led, value);
++}
++
++
++static void set_led(int state)
++{
++	switch (state) {
++	case LED_OFF:
++		__set_led(GPIO_POWER_LED, 0, 0);
++		__set_led(GPIO_FUNC_RED_LED, 0, 0);
++		__set_led(GPIO_FUNC_BLUE_LED, 0, 1);
++		__set_led(GPIO_ALARM_LED, 0, 1);
++		__set_led(GPIO_INFO_LED, 0, 1);
++		break;
++	case LED_ALARM_ON:
++		__set_led(GPIO_ALARM_LED, 0, 0);
++		break;
++	case LED_ALARM_BLINKING:
++		__set_led(GPIO_ALARM_LED, 1, 1);
++		break;
++	case LED_INFO_ON:
++		__set_led(GPIO_INFO_LED, 0, 0);
++		break;
++	case LED_INFO_BLINKING:
++		__set_led(GPIO_INFO_LED, 1, 1);
++		break;
++	case LED_POWER_ON:
++		__set_led(GPIO_POWER_LED, 0, 1);
++		break;
++	case LED_POWER_BLINKING:
++		__set_led(GPIO_POWER_LED, 1, 1);
++		break;
++	}
++}
++
++int board_init(void)
++{
++	/* address of boot parameters */
++	gd->bd->bi_boot_params = mvebu_sdram_bar(0) + 0x100;
++
++	set_led(LED_OFF);
++	set_led(LED_POWER_ON);
++	set_led(LED_INFO_BLINKING);
++
++	return 0;
++}
++
++#ifdef CONFIG_MISC_INIT_R
++static void check_power_switch(void)
++{
++
++	if (kw_gpio_get_value(GPIO_POWER_SWITCH)) {
++		/* turn off fan, HDD and USB power */
++		kw_gpio_set_value(GPIO_HDD0_POWER, 0);
++		kw_gpio_set_value(GPIO_HDD1_POWER, 0);
++		kw_gpio_set_value(GPIO_USB_VBUS, 0);
++		set_led(LED_OFF);
++
++		/* loop until released */
++		while (kw_gpio_get_value(GPIO_POWER_SWITCH))
++			;
++
++		/* turn power on again */
++		kw_gpio_set_value(GPIO_HDD0_POWER, 1);
++		kw_gpio_set_value(GPIO_HDD1_POWER, 1);
++		kw_gpio_set_value(GPIO_USB_VBUS, 1);
++		set_led(LED_POWER_ON);     
++	        set_led(LED_INFO_BLINKING);
++
++	}
++}
++
++void check_enetaddr(void)
++{
++	uchar enetaddr[6];
++
++	if (!eth_env_get_enetaddr("ethaddr", enetaddr)) {
++		/* signal unset/invalid ethaddr to user */
++		set_led(LED_INFO_BLINKING);
++	}
++}
++
++static void erase_environment(void)
++{
++	struct spi_flash *flash;
++
++	printf("Erasing environment..\n");
++	flash = spi_flash_probe(0, 0, 1000000, SPI_MODE_3);
++	if (!flash) {
++		printf("Erasing flash failed\n");
++		return;
++	}
++
++	spi_flash_erase(flash, CONFIG_ENV_OFFSET, CONFIG_ENV_SIZE);
++	spi_flash_free(flash);
++	do_reset(NULL, 0, 0, NULL);
++}
++
++static void rescue_mode(void)
++{
++	printf("Entering rescue mode..\n");
++	env_set("bootsource", "rescue");
++}
++
++static void check_push_button(void)
++{
++	int i = 0;
++
++	while (!kw_gpio_get_value(GPIO_FUNC_BUTTON)) {
++		udelay(100000);
++		i++;
++
++		if (i == 10)
++			set_led(LED_INFO_ON);
++
++		if (i >= 100) {
++			set_led(LED_INFO_BLINKING);
++			break;
++		}
++	}
++
++	if (i >= 100)
++		erase_environment();
++	else if (i >= 10)
++		rescue_mode();
++}
++
++int board_early_init_r(void)
++{
++        check_push_button();
++
++        return 0;
++}
++
++#ifdef CONFIG_SYS_DCACHE_OFF
++void enable_caches(void)
++{
++/* Enable D-cache. I-cache is already enabled in start.S */
++	dcache_enable();
++}
++#endif
++
++int misc_init_r(void)
++{
++	check_power_switch();
++	check_enetaddr();
++	check_push_button();
++	
++	return 0;
++}
++#endif
++
++#if CONFIG_IS_ENABLED(BOOTSTAGE)
++void show_boot_progress(int progress)
++{
++	if (progress > 0)
++		return;
++
++	/* this is not an error, eg. bootp with autoload=no will trigger this */
++	if (progress == -BOOTSTAGE_ID_NET_LOADED)
++		return;
++
++	set_led(LED_ALARM_BLINKING);
++}
++#endif
+diff --git a/board/buffalo/lswsxl/lswsxl.h b/board/buffalo/lswsxl/lswsxl.h
+new file mode 100644
+index 0000000000..5c96a94d4b
+--- /dev/null
++++ b/board/buffalo/lswsxl/lswsxl.h
+@@ -0,0 +1,68 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (c) 2012 Michael Walle
++ * Michael Walle <michael@walle.cc>
++ */
++
++#ifndef __LSWSXL_H
++#define __LSWSXL_H
++
++#define GPIO_HDD0_POWER		28
++#define GPIO_HDD1_POWER		35	// Linux DTS ERROR pin 35 is correct
++#define GPIO_FUNC_RED_LED	34
++#define GPIO_FUNC_BLUE_LED	36
++#define GPIO_USB_VBUS		37
++#define GPIO_INFO_LED		38
++#define GPIO_POWER_LED		39
++#define GPIO_FAN_LOCK		40
++#define GPIO_FUNC_BUTTON	41
++#define GPIO_POWER_SWITCH	42
++#define GPIO_POWER_AUTO_SWITCH	43
++#define GPIO_DAS_POWER_LED	46
++#define GPIO_USB_HOST_DEVICE	47
++#define GPIO_ALARM_LED		49
++
++#define _BIT(x) (1<<(x))
++
++#define LSWSXL_OE_LOW (~(_BIT(GPIO_HDD0_POWER)))
++
++#define LSWSXL_OE_HIGH (~(_BIT(GPIO_FUNC_BLUE_LED - 32)	    \
++			| _BIT(GPIO_ALARM_LED - 32)	    \
++			| _BIT(GPIO_INFO_LED - 32)	    \
++			| _BIT(GPIO_POWER_LED - 32)	    \
++			| _BIT(GPIO_USB_VBUS -32)	    \
++			| _BIT(GPIO_HDD1_POWER -32)	    \
++			| _BIT(GPIO_DAS_POWER_LED -32)	    \
++			| _BIT(GPIO_FAN_LOCK -32)	    \
++			| _BIT(GPIO_USB_HOST_DEVICE -32)    \
++			| _BIT(GPIO_FUNC_RED_LED - 32)))
++
++#define LSWSXL_OE_VAL_LOW (_BIT(GPIO_HDD0_POWER))	
++
++#define LSWSXL_OE_VAL_HIGH (_BIT(GPIO_FUNC_BLUE_LED - 32)   \
++			| _BIT(GPIO_ALARM_LED - 32)	    \
++			| _BIT(GPIO_INFO_LED - 32)	    \
++			| _BIT(GPIO_POWER_LED - 32)	    \
++			| _BIT(GPIO_USB_VBUS -32)	    \
++			| _BIT(GPIO_HDD1_POWER -32)	    \
++			| _BIT(GPIO_DAS_POWER_LED -32)	    \
++			| _BIT(GPIO_FAN_LOCK -32)	    \
++			| _BIT(GPIO_USB_HOST_DEVICE -32)    \
++			| _BIT(GPIO_FUNC_RED_LED - 32))
++
++#define LSWSXL_POL_VAL_HIGH (_BIT(GPIO_FUNC_BLUE_LED - 32)  \
++			| _BIT(GPIO_ALARM_LED - 32)	    \
++			| _BIT(GPIO_INFO_LED - 32)	    \
++			| _BIT(GPIO_POWER_LED - 32)	    \
++			| _BIT(GPIO_FUNC_BUTTON - 32)	    \
++			| _BIT(GPIO_POWER_SWITCH - 32)	    \
++			| _BIT(GPIO_POWER_AUTO_SWITCH - 32) \
++			| _BIT(GPIO_FUNC_RED_LED - 32))
++
++/* PHY related */
++#define MV88E1121_MAC_CTRL2_REG		21
++#define MV88E1121_PGADR_REG		22
++#define MV88E1121_RGMII_TXTM_CTRL	(1 << 4)
++#define MV88E1121_RGMII_RXTM_CTRL	(1 << 5)
++
++#endif /* __LSWSXL_H */
+diff --git a/configs/lswsxl_defconfig b/configs/lswsxl_defconfig
+new file mode 100644
+index 0000000000..6960ab503a
+--- /dev/null
++++ b/configs/lswsxl_defconfig
+@@ -0,0 +1,1584 @@
++#
++# Automatically generated file; DO NOT EDIT.
++# U-Boot 2023.10 Configuration
++#
++
++#
++# Compiler: arm-none-eabi-gcc (15:12.2.rel1-1) 12.2.1 20221205
++#
++CONFIG_CREATE_ARCH_SYMLINK=y
++CONFIG_SYS_CACHE_SHIFT_5=y
++CONFIG_SYS_CACHELINE_SIZE=32
++CONFIG_LINKER_LIST_ALIGN=4
++# CONFIG_ARC is not set
++CONFIG_ARM=y
++# CONFIG_M68K is not set
++# CONFIG_MICROBLAZE is not set
++# CONFIG_MIPS is not set
++# CONFIG_NIOS2 is not set
++# CONFIG_PPC is not set
++# CONFIG_RISCV is not set
++# CONFIG_SANDBOX is not set
++# CONFIG_SH is not set
++# CONFIG_X86 is not set
++# CONFIG_XTENSA is not set
++CONFIG_SYS_ARCH="arm"
++CONFIG_SYS_CPU="arm926ejs"
++CONFIG_SYS_SOC="kirkwood"
++CONFIG_SYS_VENDOR="buffalo"
++CONFIG_SYS_BOARD="lswsxl"
++CONFIG_SYS_CONFIG_NAME="lswsxl"
++
++#
++# Skipping low level initialization functions
++#
++CONFIG_SKIP_LOWLEVEL_INIT=y
++# CONFIG_SKIP_LOWLEVEL_INIT_ONLY is not set
++# CONFIG_SYS_ICACHE_OFF is not set
++# CONFIG_SYS_DCACHE_OFF is not set
++
++#
++# ARM architecture
++#
++# CONFIG_GIC_V3_ITS is not set
++CONFIG_GPIO_EXTRA_HEADER=y
++CONFIG_ARM_ASM_UNIFIED=y
++CONFIG_SYS_ARM_CACHE_CP15=y
++# CONFIG_SYS_ARM_MMU is not set
++# CONFIG_SYS_ARM_MPU is not set
++CONFIG_CPU_ARM926EJS=y
++CONFIG_SYS_ARM_ARCH=5
++CONFIG_SYS_ARM_CACHE_WRITEBACK=y
++# CONFIG_SYS_ARM_CACHE_WRITETHROUGH is not set
++# CONFIG_SYS_ARM_CACHE_WRITEALLOC is not set
++CONFIG_ARCH_VERY_EARLY_INIT=y
++CONFIG_ARCH_CPU_INIT=y
++# CONFIG_SYS_THUMB_BUILD is not set
++# CONFIG_SYS_L2_PL310 is not set
++# CONFIG_SPL_SYS_L2_PL310 is not set
++# CONFIG_SYS_L2CACHE_OFF is not set
++# CONFIG_ENABLE_ARM_SOC_BOOT0_HOOK is not set
++CONFIG_USE_ARCH_MEMCPY=y
++CONFIG_USE_ARCH_MEMSET=y
++# CONFIG_ARCH_AT91 is not set
++# CONFIG_ARCH_DAVINCI is not set
++# CONFIG_ARCH_HISTB is not set
++CONFIG_ARCH_KIRKWOOD=y
++# CONFIG_ARCH_MVEBU is not set
++# CONFIG_ARCH_ORION5X is not set
++# CONFIG_TARGET_STV0991 is not set
++# CONFIG_ARCH_BCM283X is not set
++# CONFIG_ARCH_BCMSTB is not set
++# CONFIG_ARCH_BCMBCA is not set
++# CONFIG_TARGET_VEXPRESS_CA9X4 is not set
++# CONFIG_TARGET_BCMNS is not set
++# CONFIG_TARGET_BCMNS2 is not set
++# CONFIG_TARGET_BCMNS3 is not set
++# CONFIG_ARCH_EXYNOS is not set
++# CONFIG_ARCH_S5PC1XX is not set
++# CONFIG_ARCH_HIGHBANK is not set
++# CONFIG_ARCH_INTEGRATOR is not set
++# CONFIG_ARCH_IPQ40XX is not set
++# CONFIG_ARCH_KEYSTONE is not set
++# CONFIG_ARCH_K3 is not set
++# CONFIG_ARCH_OMAP2PLUS is not set
++# CONFIG_ARCH_MESON is not set
++# CONFIG_ARCH_MEDIATEK is not set
++# CONFIG_ARCH_LPC32XX is not set
++# CONFIG_ARCH_IMX8 is not set
++# CONFIG_ARCH_IMX8M is not set
++# CONFIG_ARCH_IMX8ULP is not set
++# CONFIG_ARCH_IMX9 is not set
++# CONFIG_ARCH_IMXRT is not set
++# CONFIG_ARCH_MX23 is not set
++# CONFIG_ARCH_MX28 is not set
++# CONFIG_ARCH_MX31 is not set
++# CONFIG_ARCH_MX7ULP is not set
++# CONFIG_ARCH_MX7 is not set
++# CONFIG_ARCH_MX6 is not set
++# CONFIG_ARCH_MX5 is not set
++# CONFIG_ARCH_NEXELL is not set
++# CONFIG_ARCH_NPCM is not set
++# CONFIG_ARCH_APPLE is not set
++# CONFIG_ARCH_OWL is not set
++# CONFIG_ARCH_QEMU is not set
++# CONFIG_ARCH_RMOBILE is not set
++# CONFIG_ARCH_SNAPDRAGON is not set
++# CONFIG_ARCH_SOCFPGA is not set
++# CONFIG_ARCH_SUNXI is not set
++# CONFIG_ARCH_U8500 is not set
++# CONFIG_ARCH_VERSAL is not set
++# CONFIG_ARCH_VERSAL_NET is not set
++# CONFIG_ARCH_VF610 is not set
++# CONFIG_ARCH_ZYNQ is not set
++# CONFIG_ARCH_ZYNQMP_R5 is not set
++# CONFIG_ARCH_ZYNQMP is not set
++# CONFIG_ARCH_TEGRA is not set
++# CONFIG_ARCH_VEXPRESS64 is not set
++# CONFIG_TARGET_CORSTONE1000 is not set
++# CONFIG_TARGET_TOTAL_COMPUTE is not set
++# CONFIG_TARGET_LS2080A_EMU is not set
++# CONFIG_TARGET_LS1088AQDS is not set
++# CONFIG_TARGET_LS2080AQDS is not set
++# CONFIG_TARGET_LS2080ARDB is not set
++# CONFIG_TARGET_LS2081ARDB is not set
++# CONFIG_TARGET_LX2160ARDB is not set
++# CONFIG_TARGET_LX2160AQDS is not set
++# CONFIG_TARGET_LX2162AQDS is not set
++# CONFIG_TARGET_HIKEY is not set
++# CONFIG_TARGET_HIKEY960 is not set
++# CONFIG_TARGET_POPLAR is not set
++# CONFIG_TARGET_LS1012AQDS is not set
++# CONFIG_TARGET_LS1012ARDB is not set
++# CONFIG_TARGET_LS1012A2G5RDB is not set
++# CONFIG_TARGET_LS1012AFRWY is not set
++# CONFIG_TARGET_LS1012AFRDM is not set
++# CONFIG_TARGET_LS1028AQDS is not set
++# CONFIG_TARGET_LS1028ARDB is not set
++# CONFIG_TARGET_LS1088ARDB is not set
++# CONFIG_TARGET_LS1021AQDS is not set
++# CONFIG_TARGET_LS1021ATWR is not set
++# CONFIG_TARGET_PG_WCOM_SELI8 is not set
++# CONFIG_TARGET_PG_WCOM_EXPU1 is not set
++# CONFIG_TARGET_LS1021ATSN is not set
++# CONFIG_TARGET_LS1021AIOT is not set
++# CONFIG_TARGET_LS1043AQDS is not set
++# CONFIG_TARGET_LS1043ARDB is not set
++# CONFIG_TARGET_LS1046AQDS is not set
++# CONFIG_TARGET_LS1046ARDB is not set
++# CONFIG_TARGET_LS1046AFRWY is not set
++# CONFIG_TARGET_SL28 is not set
++# CONFIG_TARGET_TEN64 is not set
++# CONFIG_ARCH_UNIPHIER is not set
++# CONFIG_ARCH_SYNQUACER is not set
++# CONFIG_ARCH_STM32 is not set
++# CONFIG_ARCH_STI is not set
++# CONFIG_ARCH_STM32MP is not set
++# CONFIG_ARCH_ROCKCHIP is not set
++# CONFIG_ARCH_OCTEONTX is not set
++# CONFIG_ARCH_OCTEONTX2 is not set
++# CONFIG_TARGET_THUNDERX_88XX is not set
++# CONFIG_ARCH_ASPEED is not set
++# CONFIG_TARGET_DURIAN is not set
++# CONFIG_TARGET_POMELO is not set
++# CONFIG_TARGET_PRESIDIO_ASIC is not set
++# CONFIG_TARGET_XENGUEST_ARM64 is not set
++# CONFIG_ARCH_GXP is not set
++# CONFIG_SUPPORT_PASSING_ATAGS is not set
++# CONFIG_STATIC_MACH_TYPE is not set
++CONFIG_SYS_KWD_CONFIG="board/buffalo/lswsxl/kwbimage-lswsxl.cfg"
++CONFIG_TEXT_BASE=0x600000
++CONFIG_SYS_MALLOC_LEN=0x400000
++CONFIG_SYS_MALLOC_F_LEN=0x2000
++CONFIG_NR_DRAM_BANKS=2
++CONFIG_ENV_SOURCE_FILE=""
++CONFIG_FEROCEON_88FR131=y
++CONFIG_KW88F6281=y
++CONFIG_KIRKWOOD_COMMON=y
++CONFIG_HAS_CUSTOM_SYS_INIT_SP_ADDR=y
++CONFIG_CUSTOM_SYS_INIT_SP_ADDR=0x5ff000
++# CONFIG_TARGET_OPENRD is not set
++# CONFIG_TARGET_DREAMPLUG is not set
++# CONFIG_TARGET_DS109 is not set
++# CONFIG_TARGET_GURUPLUG is not set
++# CONFIG_TARGET_SHEEVAPLUG is not set
++# CONFIG_TARGET_LSXL is not set
++# CONFIG_TARGET_POGO_E02 is not set
++# CONFIG_TARGET_POGO_V4 is not set
++# CONFIG_TARGET_DNS325 is not set
++# CONFIG_TARGET_ICONNECT is not set
++# CONFIG_TARGET_KM_KIRKWOOD is not set
++# CONFIG_TARGET_NET2BIG_V2 is not set
++# CONFIG_TARGET_NETSPACE_V2 is not set
++# CONFIG_TARGET_IB62X0 is not set
++# CONFIG_TARGET_DOCKSTAR is not set
++# CONFIG_TARGET_GOFLEXHOME is not set
++# CONFIG_TARGET_NAS220 is not set
++# CONFIG_TARGET_NSA310S is not set
++# CONFIG_TARGET_SBx81LIFKW is not set
++# CONFIG_TARGET_SBx81LIFXCAT is not set
++CONFIG_TARGET_LSWSXL=y
++CONFIG_KIRKWOOD_RGMII_PAD_1V8=y
++CONFIG_KIRKWOOD_EGIGA_INIT=y
++CONFIG_KIRKWOOD_PCIE_INIT=y
++CONFIG_SF_DEFAULT_SPEED=50000000
++CONFIG_SF_DEFAULT_MODE=0x0
++CONFIG_ENV_SIZE=0x10000
++CONFIG_ENV_OFFSET=0x70000
++CONFIG_ENV_SECT_SIZE=0x10000
++# CONFIG_DM_GPIO is not set
++CONFIG_DEFAULT_DEVICE_TREE="kirkwood-linkstation-lswsxl"
++# CONFIG_OF_LIBFDT_OVERLAY is not set
++CONFIG_MULTI_DTB_FIT_UNCOMPRESS_SZ=0x8000
++# CONFIG_DM_RESET is not set
++CONFIG_SYS_MONITOR_LEN=0
++CONFIG_ERR_PTR_OFFSET=0x0
++CONFIG_BOOTSTAGE_STASH_ADDR=0
++CONFIG_IDENT_STRING=" LSWSXL"
++CONFIG_SYS_CLK_FREQ=0
++# CONFIG_CHIP_DIP_SCAN is not set
++# CONFIG_CMD_DEKBLOB is not set
++# CONFIG_IMX_CAAM_DEK_ENCAP is not set
++# CONFIG_IMX_OPTEE_DEK_ENCAP is not set
++# CONFIG_IMX_SECO_DEK_ENCAP is not set
++# CONFIG_IMX_ELE_DEK_ENCAP is not set
++# CONFIG_CMD_HDMIDETECT is not set
++CONFIG_IMX_DCD_ADDR=0x00910000
++CONFIG_SYS_MEM_TOP_HIDE=0x0
++CONFIG_SYS_LOAD_ADDR=0x800000
++CONFIG_ENV_ADDR=0x0
++
++#
++# ARM debug
++#
++# CONFIG_DEBUG_LL is not set
++CONFIG_BUILD_TARGET="u-boot.kwb"
++# CONFIG_PCI is not set
++CONFIG_FWU_NUM_BANKS=2
++CONFIG_FWU_NUM_IMAGES_PER_BANK=2
++# CONFIG_DEBUG_UART is not set
++CONFIG_AHCI=y
++# CONFIG_OF_BOARD_FIXUP is not set
++
++#
++# Functionality shared between NXP SoCs
++#
++# CONFIG_NXP_ESBC is not set
++
++#
++# General setup
++#
++CONFIG_LOCALVERSION=""
++# CONFIG_LOCALVERSION_AUTO is not set
++CONFIG_CC_IS_GCC=y
++CONFIG_GCC_VERSION=120201
++CONFIG_CLANG_VERSION=0
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
++# CONFIG_CC_OPTIMIZE_FOR_SPEED is not set
++# CONFIG_CC_OPTIMIZE_FOR_DEBUG is not set
++CONFIG_OPTIMIZE_INLINING=y
++CONFIG_ARCH_SUPPORTS_LTO=y
++CONFIG_LTO=y
++CONFIG_CC_HAS_ASM_INLINE=y
++# CONFIG_ENV_VARS_UBOOT_CONFIG is not set
++# CONFIG_SYS_BOOT_GET_CMDLINE is not set
++# CONFIG_SYS_BOOT_GET_KBD is not set
++CONFIG_SYS_MALLOC_F=y
++# CONFIG_VALGRIND is not set
++# CONFIG_EXPERT is not set
++# CONFIG_PHYS_64BIT is not set
++# CONFIG_FDT_64BIT is not set
++# CONFIG_REMAKE_ELF is not set
++CONFIG_HAS_BOARD_SIZE_LIMIT=y
++CONFIG_BOARD_SIZE_LIMIT=458752
++# CONFIG_SYS_CUSTOM_LDSCRIPT is not set
++CONFIG_PLATFORM_ELFENTRY="_start"
++CONFIG_STACK_SIZE=0x1000000
++CONFIG_SYS_SRAM_BASE=0x0
++CONFIG_SYS_SRAM_SIZE=0x0
++# CONFIG_MP is not set
++# CONFIG_API is not set
++
++#
++# Boot options
++#
++
++#
++# Boot images
++#
++# CONFIG_ANDROID_BOOT_IMAGE is not set
++CONFIG_FIT=y
++# CONFIG_TIMESTAMP is not set
++CONFIG_FIT_EXTERNAL_OFFSET=0x0
++# CONFIG_FIT_FULL_CHECK is not set
++# CONFIG_FIT_SIGNATURE is not set
++# CONFIG_FIT_CIPHER is not set
++# CONFIG_FIT_VERBOSE is not set
++# CONFIG_FIT_BEST_MATCH is not set
++# CONFIG_FIT_PRINT is not set
++# CONFIG_SPL_LOAD_FIT_FULL is not set
++# CONFIG_BOOTSTD is not set
++CONFIG_LEGACY_IMAGE_FORMAT=y
++CONFIG_SUPPORT_RAW_INITRD=y
++# CONFIG_OF_BOARD_SETUP is not set
++# CONFIG_OF_SYSTEM_SETUP is not set
++# CONFIG_OF_STDOUT_VIA_ALIAS is not set
++CONFIG_HAVE_TEXT_BASE=y
++# CONFIG_DYNAMIC_SYS_CLK_FREQ is not set
++CONFIG_ARCH_FIXUP_FDT_MEMORY=y
++# CONFIG_CHROMEOS is not set
++# CONFIG_CHROMEOS_VBOOT is not set
++# CONFIG_RAMBOOT_PBL is not set
++CONFIG_SYS_BOOT_RAMDISK_HIGH=y
++# CONFIG_DISTRO_DEFAULTS is not set
++
++#
++# Boot timing
++#
++# CONFIG_BOOTSTAGE is not set
++CONFIG_BOOTSTAGE_STASH_SIZE=0x1000
++CONFIG_SHOW_BOOT_PROGRESS=y
++
++#
++# Boot media
++#
++# CONFIG_NAND_BOOT is not set
++# CONFIG_ONENAND_BOOT is not set
++# CONFIG_QSPI_BOOT is not set
++# CONFIG_SATA_BOOT is not set
++# CONFIG_SD_BOOT is not set
++# CONFIG_SD_BOOT_QSPI is not set
++CONFIG_SPI_BOOT=y
++
++#
++# Autoboot options
++#
++CONFIG_AUTOBOOT=y
++CONFIG_BOOTDELAY=3
++# CONFIG_AUTOBOOT_KEYED is not set
++# CONFIG_AUTOBOOT_USE_MENUKEY is not set
++# CONFIG_BOOT_RETRY is not set
++
++#
++# Image support
++#
++# CONFIG_IMAGE_PRE_LOAD is not set
++# CONFIG_USE_BOOTARGS is not set
++# CONFIG_BOOTARGS_SUBST is not set
++CONFIG_USE_BOOTCOMMAND=y
++CONFIG_BOOTCOMMAND="run bootcmd_${bootsource}"
++# CONFIG_USE_PREBOOT is not set
++CONFIG_DEFAULT_FDT_FILE="kirkwood-linkstation-lswsxl.dtb"
++# CONFIG_SAVE_PREV_BL_FDT_ADDR is not set
++# CONFIG_SAVE_PREV_BL_INITRAMFS_START_ADDR is not set
++
++#
++# Configuration editor
++#
++
++#
++# Console
++#
++# CONFIG_CONSOLE_RECORD is not set
++# CONFIG_DISABLE_CONSOLE is not set
++CONFIG_LOGLEVEL=4
++# CONFIG_SILENT_CONSOLE is not set
++# CONFIG_SPL_SILENT_CONSOLE is not set
++# CONFIG_TPL_SILENT_CONSOLE is not set
++# CONFIG_PRE_CONSOLE_BUFFER is not set
++# CONFIG_CONSOLE_FLUSH_SUPPORT is not set
++# CONFIG_CONSOLE_MUX is not set
++# CONFIG_SYS_CONSOLE_IS_IN_ENV is not set
++# CONFIG_SYS_CONSOLE_OVERWRITE_ROUTINE is not set
++CONFIG_SYS_CONSOLE_INFO_QUIET=y
++# CONFIG_SYS_STDIO_DEREGISTER is not set
++# CONFIG_SPL_SYS_STDIO_DEREGISTER is not set
++# CONFIG_SYS_DEVICE_NULLDEV is not set
++
++#
++# Logging
++#
++# CONFIG_LOG is not set
++
++#
++# Init options
++#
++# CONFIG_BOARD_TYPES is not set
++# CONFIG_DISPLAY_CPUINFO is not set
++# CONFIG_DISPLAY_BOARDINFO is not set
++# CONFIG_DISPLAY_BOARDINFO_LATE is not set
++
++#
++# Start-up hooks
++#
++# CONFIG_CYCLIC is not set
++CONFIG_ARCH_MISC_INIT=y
++CONFIG_BOARD_EARLY_INIT_F=y
++CONFIG_BOARD_EARLY_INIT_R=y
++# CONFIG_BOARD_POSTCLK_INIT is not set
++# CONFIG_BOARD_LATE_INIT is not set
++# CONFIG_CLOCKS is not set
++# CONFIG_HWCONFIG is not set
++# CONFIG_LAST_STAGE_INIT is not set
++CONFIG_MISC_INIT_R=y
++# CONFIG_SYS_MALLOC_BOOTPARAMS is not set
++# CONFIG_ID_EEPROM is not set
++# CONFIG_RESET_PHY_R is not set
++
++#
++# Security support
++#
++CONFIG_HASH=y
++# CONFIG_STACKPROTECTOR is not set
++# CONFIG_BOARD_RNG_SEED is not set
++
++#
++# Update support
++#
++# CONFIG_UPDATE_TFTP is not set
++# CONFIG_ANDROID_AB is not set
++
++#
++# Blob list
++#
++# CONFIG_BLOBLIST is not set
++# CONFIG_FDT_SIMPLEFB is not set
++# CONFIG_BMP is not set
++
++#
++# Command line interface
++#
++CONFIG_CMDLINE=y
++CONFIG_HUSH_PARSER=y
++CONFIG_CMDLINE_EDITING=y
++# CONFIG_CMDLINE_PS_SUPPORT is not set
++CONFIG_AUTO_COMPLETE=y
++CONFIG_SYS_LONGHELP=y
++CONFIG_SYS_PROMPT="=> "
++CONFIG_SYS_PROMPT_HUSH_PS2="> "
++CONFIG_SYS_MAXARGS=32
++CONFIG_SYS_CBSIZE=1024
++CONFIG_SYS_PBSIZE=1044
++# CONFIG_SYS_XTRACE is not set
++
++#
++# Commands
++#
++
++#
++# Info commands
++#
++# CONFIG_CMD_BDI is not set
++# CONFIG_CMD_BDINFO_EXTRA is not set
++# CONFIG_CMD_CONFIG is not set
++# CONFIG_CMD_CONSOLE is not set
++# CONFIG_CMD_LICENSE is not set
++# CONFIG_CMD_PMC is not set
++
++#
++# Boot commands
++#
++# CONFIG_CMD_BOOTD is not set
++CONFIG_CMD_BOOTM=y
++CONFIG_CMD_BOOTZ=y
++CONFIG_BOOTM_LINUX=y
++# CONFIG_BOOTM_NETBSD is not set
++# CONFIG_BOOTM_OPENRTOS is not set
++# CONFIG_BOOTM_PLAN9 is not set
++# CONFIG_BOOTM_RTEMS is not set
++# CONFIG_BOOTM_VXWORKS is not set
++CONFIG_SYS_BOOTM_LEN=0x2000000
++# CONFIG_CMD_BOOTMENU is not set
++# CONFIG_CMD_ADTIMG is not set
++# CONFIG_CMD_ELF is not set
++# CONFIG_CMD_FDT is not set
++# CONFIG_CMD_GO is not set
++CONFIG_CMD_RUN=y
++CONFIG_CMD_IMI=y
++# CONFIG_CMD_IMLS is not set
++# CONFIG_CMD_XIMG is not set
++# CONFIG_CMD_XXD is not set
++# CONFIG_CMD_THOR_DOWNLOAD is not set
++# CONFIG_CMD_ZBOOT is not set
++
++#
++# Environment commands
++#
++# CONFIG_CMD_ASKENV is not set
++# CONFIG_CMD_EXPORTENV is not set
++# CONFIG_CMD_IMPORTENV is not set
++# CONFIG_CMD_EDITENV is not set
++# CONFIG_CMD_GREPENV is not set
++CONFIG_CMD_SAVEENV=y
++# CONFIG_CMD_ERASEENV is not set
++# CONFIG_CMD_ENV_EXISTS is not set
++# CONFIG_CMD_ENV_CALLBACK is not set
++# CONFIG_CMD_ENV_FLAGS is not set
++# CONFIG_CMD_NVEDIT_INDIRECT is not set
++# CONFIG_CMD_NVEDIT_INFO is not set
++# CONFIG_CMD_NVEDIT_LOAD is not set
++# CONFIG_CMD_NVEDIT_SELECT is not set
++
++#
++# Memory commands
++#
++# CONFIG_CMD_BINOP is not set
++# CONFIG_CMD_BLOBLIST is not set
++CONFIG_CMD_CRC32=y
++# CONFIG_CRC32_VERIFY is not set
++# CONFIG_CMD_EEPROM is not set
++# CONFIG_LOOPW is not set
++# CONFIG_CMD_MD5SUM is not set
++# CONFIG_CMD_MEMINFO is not set
++CONFIG_CMD_MEMORY=y
++# CONFIG_CMD_MEM_SEARCH is not set
++# CONFIG_CMD_MX_CYCLIC is not set
++CONFIG_CMD_RANDOM=y
++# CONFIG_CMD_MEMTEST is not set
++# CONFIG_CMD_SHA1SUM is not set
++# CONFIG_CMD_STRINGS is not set
++
++#
++# Compression commands
++#
++# CONFIG_CMD_LZMADEC is not set
++# CONFIG_CMD_UNLZ4 is not set
++# CONFIG_CMD_UNZIP is not set
++# CONFIG_CMD_ZIP is not set
++
++#
++# Device access commands
++#
++# CONFIG_CMD_ARMFLASH is not set
++# CONFIG_CMD_BIND is not set
++# CONFIG_CMD_CLK is not set
++# CONFIG_CMD_DEMO is not set
++# CONFIG_CMD_DFU is not set
++# CONFIG_CMD_DM is not set
++# CONFIG_CMD_FLASH is not set
++# CONFIG_CMD_FPGAD is not set
++# CONFIG_CMD_FUSE is not set
++# CONFIG_CMD_GPIO is not set
++# CONFIG_CMD_GPT is not set
++# CONFIG_RANDOM_UUID is not set
++# CONFIG_CMD_IDE is not set
++# CONFIG_CMD_IO is not set
++# CONFIG_CMD_IOTRACE is not set
++# CONFIG_CMD_I2C is not set
++# CONFIG_CMD_LOADB is not set
++# CONFIG_CMD_LOADM is not set
++# CONFIG_CMD_LOADS is not set
++CONFIG_CMD_LOADXY_TIMEOUT=90
++# CONFIG_CMD_LSBLK is not set
++# CONFIG_CMD_MBR is not set
++# CONFIG_CMD_CLONE is not set
++CONFIG_CMD_MTD=y
++# CONFIG_CMD_ONENAND is not set
++# CONFIG_CMD_OSD is not set
++CONFIG_CMD_PART=y
++# CONFIG_CMD_PCI is not set
++# CONFIG_CMD_POWEROFF is not set
++# CONFIG_CMD_READ is not set
++CONFIG_CMD_SATA=y
++# CONFIG_CMD_SDRAM is not set
++CONFIG_CMD_SF=y
++# CONFIG_CMD_SF_TEST is not set
++# CONFIG_CMD_SPI is not set
++# CONFIG_CMD_TSI148 is not set
++# CONFIG_CMD_UNIVERSE is not set
++CONFIG_CMD_USB=y
++# CONFIG_CMD_USB_SDP is not set
++# CONFIG_CMD_WRITE is not set
++
++#
++# Shell scripting commands
++#
++# CONFIG_CMD_CAT is not set
++# CONFIG_CMD_ECHO is not set
++# CONFIG_CMD_ITEST is not set
++# CONFIG_CMD_SOURCE is not set
++# CONFIG_CMD_SETEXPR is not set
++
++#
++# Android support commands
++#
++CONFIG_CMD_NET=y
++# CONFIG_CMD_BOOTP is not set
++# CONFIG_CMD_PCAP is not set
++CONFIG_CMD_TFTPBOOT=y
++# CONFIG_CMD_TFTPPUT is not set
++# CONFIG_CMD_TFTPSRV is not set
++CONFIG_NET_TFTP_VARS=y
++# CONFIG_CMD_RARP is not set
++# CONFIG_CMD_NFS is not set
++# CONFIG_CMD_WGET is not set
++# CONFIG_CMD_MII is not set
++# CONFIG_CMD_MDIO is not set
++CONFIG_CMD_PING=y
++# CONFIG_CMD_CDP is not set
++# CONFIG_CMD_SNTP is not set
++# CONFIG_CMD_DNS is not set
++# CONFIG_CMD_LINK_LOCAL is not set
++# CONFIG_CMD_ETHSW is not set
++# CONFIG_CMD_PXE is not set
++# CONFIG_CMD_WOL is not set
++
++#
++# Misc commands
++#
++# CONFIG_CMD_2048 is not set
++# CONFIG_CMD_BSP is not set
++# CONFIG_CMD_BLOCK_CACHE is not set
++# CONFIG_CMD_CACHE is not set
++# CONFIG_CMD_CONITRACE is not set
++# CONFIG_CMD_CLS is not set
++# CONFIG_CMD_EXCEPTION is not set
++# CONFIG_CMD_INI is not set
++# CONFIG_CMD_DATE is not set
++# CONFIG_CMD_TIME is not set
++# CONFIG_CMD_GETTIME is not set
++# CONFIG_CMD_PAUSE is not set
++CONFIG_CMD_SLEEP=y
++# CONFIG_CMD_TIMER is not set
++# CONFIG_CMD_SYSBOOT is not set
++# CONFIG_CMD_QFW is not set
++# CONFIG_CMD_PSTORE is not set
++# CONFIG_CMD_TERMINAL is not set
++# CONFIG_CMD_UUID is not set
++
++#
++# TI specific command line interface
++#
++# CONFIG_CMD_DDR3 is not set
++
++#
++# Power commands
++#
++
++#
++# Security commands
++#
++# CONFIG_CMD_AES is not set
++# CONFIG_CMD_BLOB is not set
++# CONFIG_CMD_HASH is not set
++
++#
++# Firmware commands
++#
++
++#
++# Filesystem commands
++#
++# CONFIG_CMD_BTRFS is not set
++# CONFIG_CMD_EROFS is not set
++# CONFIG_CMD_EXT2 is not set
++CONFIG_CMD_EXT4=y
++# CONFIG_CMD_EXT4_WRITE is not set
++CONFIG_CMD_FAT=y
++# CONFIG_CMD_SQUASHFS is not set
++CONFIG_CMD_FS_GENERIC=y
++CONFIG_CMD_FS_UUID=y
++# CONFIG_CMD_JFFS2 is not set
++CONFIG_CMD_MTDPARTS=y
++# CONFIG_CMD_MTDPARTS_SPREAD is not set
++# CONFIG_CMD_MTDPARTS_SHOW_NET_SIZES is not set
++CONFIG_MTDIDS_DEFAULT="nor0=w25q128-flash.0"
++CONFIG_MTDPARTS_DEFAULT="mtdparts=w25q128-flash.0:448k(uboot),64k(uboot_env),-(rootfs)"
++# CONFIG_CMD_REISER is not set
++# CONFIG_CMD_ZFS is not set
++
++#
++# Debug commands
++#
++# CONFIG_CMD_DIAG is not set
++# CONFIG_CMD_LOG is not set
++CONFIG_CMD_UBI=y
++# CONFIG_CMD_UBI_RENAME is not set
++CONFIG_CMD_UBIFS=y
++
++#
++# Partition Types
++#
++CONFIG_PARTITIONS=y
++# CONFIG_MAC_PARTITION is not set
++CONFIG_DOS_PARTITION=y
++# CONFIG_ISO_PARTITION is not set
++# CONFIG_AMIGA_PARTITION is not set
++CONFIG_EFI_PARTITION=y
++CONFIG_EFI_PARTITION_ENTRIES_NUMBERS=128
++CONFIG_EFI_PARTITION_ENTRIES_OFF=0
++CONFIG_PARTITION_UUIDS=y
++CONFIG_PARTITION_TYPE_GUID=y
++CONFIG_SUPPORT_OF_CONTROL=y
++
++#
++# Device Tree Control
++#
++CONFIG_OF_CONTROL=y
++CONFIG_OF_REAL=y
++# CONFIG_OF_LIVE is not set
++CONFIG_OF_SEPARATE=y
++# CONFIG_OF_EMBED is not set
++# CONFIG_OF_BOARD is not set
++# CONFIG_OF_OMIT_DTB is not set
++CONFIG_DEVICE_TREE_INCLUDES=""
++CONFIG_OF_LIST="kirkwood-linkstation-lswsxl"
++# CONFIG_MULTI_DTB_FIT is not set
++# CONFIG_OF_TAG_MIGRATE is not set
++# CONFIG_OF_DTB_PROPS_REMOVE is not set
++
++#
++# Environment
++#
++CONFIG_ENV_SUPPORT=y
++CONFIG_SAVEENV=y
++# CONFIG_ENV_OVERWRITE is not set
++# CONFIG_OVERWRITE_ETHADDR_ONCE is not set
++CONFIG_ENV_MIN_ENTRIES=64
++CONFIG_ENV_MAX_ENTRIES=512
++# CONFIG_ENV_IS_NOWHERE is not set
++# CONFIG_ENV_IS_IN_EEPROM is not set
++# CONFIG_ENV_IS_IN_FAT is not set
++# CONFIG_ENV_IS_IN_EXT4 is not set
++# CONFIG_ENV_IS_IN_FLASH is not set
++# CONFIG_ENV_IS_IN_NAND is not set
++# CONFIG_ENV_IS_IN_NVRAM is not set
++# CONFIG_ENV_IS_IN_ONENAND is not set
++# CONFIG_ENV_IS_IN_REMOTE is not set
++CONFIG_ENV_IS_IN_SPI_FLASH=y
++# CONFIG_ENV_SECT_SIZE_AUTO is not set
++CONFIG_ENV_SPI_BUS=0
++CONFIG_ENV_SPI_CS=0
++CONFIG_ENV_SPI_MAX_HZ=50000000
++CONFIG_ENV_SPI_MODE=0x0
++# CONFIG_ENV_SPI_EARLY is not set
++# CONFIG_ENV_IS_IN_UBI is not set
++# CONFIG_SYS_REDUNDAND_ENVIRONMENT is not set
++CONFIG_SYS_RELOC_GD_ENV_ADDR=y
++# CONFIG_USE_DEFAULT_ENV_FILE is not set
++# CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG is not set
++# CONFIG_ENV_IMPORT_FDT is not set
++# CONFIG_ENV_APPEND is not set
++# CONFIG_ENV_WRITEABLE_LIST is not set
++# CONFIG_ENV_ACCESS_IGNORE_FORCE is not set
++# CONFIG_USE_BOOTFILE is not set
++# CONFIG_USE_ETHPRIME is not set
++# CONFIG_USE_HOSTNAME is not set
++# CONFIG_VERSION_VARIABLE is not set
++CONFIG_NET=y
++CONFIG_ARP_TIMEOUT=5000
++CONFIG_NET_RETRY_COUNT=5
++# CONFIG_PROT_UDP is not set
++# CONFIG_BOOTP_SEND_HOSTNAME is not set
++CONFIG_NET_RANDOM_ETHADDR=y
++# CONFIG_NETCONSOLE is not set
++# CONFIG_IP_DEFRAG is not set
++# CONFIG_SYS_FAULT_ECHO_LINK_DOWN is not set
++CONFIG_TFTP_BLOCKSIZE=1468
++# CONFIG_TFTP_PORT is not set
++CONFIG_TFTP_WINDOWSIZE=1
++# CONFIG_TFTP_TSIZE is not set
++# CONFIG_SERVERIP_FROM_PROXYDHCP is not set
++CONFIG_SERVERIP_FROM_PROXYDHCP_DELAY_MS=100
++# CONFIG_KEEP_SERVERADDR is not set
++# CONFIG_UDP_CHECKSUM is not set
++# CONFIG_BOOTP_SERVERIP is not set
++CONFIG_BOOTP_MAX_ROOT_PATH_LEN=64
++CONFIG_USE_GATEWAYIP=y
++CONFIG_GATEWAYIP="255.255.255.0"
++CONFIG_USE_IPADDR=y
++CONFIG_IPADDR="192.168.1.188"
++CONFIG_USE_NETMASK=y
++CONFIG_NETMASK="255.255.255.0"
++# CONFIG_USE_ROOTPATH is not set
++CONFIG_USE_SERVERIP=y
++CONFIG_SERVERIP="192.168.1.1"
++# CONFIG_PROT_TCP is not set
++# CONFIG_IPV6 is not set
++CONFIG_SYS_RX_ETH_BUFFER=4
++
++#
++# Device Drivers
++#
++
++#
++# Generic Driver Options
++#
++CONFIG_DM=y
++# CONFIG_DM_WARN is not set
++# CONFIG_DM_DEBUG is not set
++# CONFIG_DM_STATS is not set
++# CONFIG_DM_DEVICE_REMOVE is not set
++CONFIG_DM_STDIO=y
++CONFIG_DM_SEQ_ALIAS=y
++# CONFIG_DM_DMA is not set
++# CONFIG_REGMAP is not set
++# CONFIG_DEVRES is not set
++CONFIG_SIMPLE_BUS=y
++CONFIG_SIMPLE_BUS_CORRECT_RANGE=y
++CONFIG_OF_TRANSLATE=y
++# CONFIG_TRANSLATION_OFFSET is not set
++CONFIG_DM_DEV_READ_INLINE=y
++# CONFIG_OFNODE_MULTI_TREE is not set
++# CONFIG_BOUNCE_BUFFER is not set
++# CONFIG_ADC is not set
++# CONFIG_ADC_EXYNOS is not set
++# CONFIG_ADC_SANDBOX is not set
++# CONFIG_SARADC_MESON is not set
++# CONFIG_SARADC_ROCKCHIP is not set
++# CONFIG_ADC_IMX93 is not set
++CONFIG_SATA=y
++CONFIG_LIBATA=y
++# CONFIG_SCSI_AHCI is not set
++
++#
++# SATA/SCSI device support
++#
++# CONFIG_DWC_AHSATA is not set
++# CONFIG_MTK_AHCI is not set
++# CONFIG_SUNXI_AHCI is not set
++CONFIG_SATA_MV=y
++CONFIG_SYS_SATA_MAX_DEVICE=1
++# CONFIG_AXI is not set
++
++#
++# Bus devices
++#
++CONFIG_BLK=y
++CONFIG_BLOCK_CACHE=y
++# CONFIG_BLKMAP is not set
++# CONFIG_EFI_MEDIA is not set
++# CONFIG_IDE is not set
++CONFIG_LBA48=y
++CONFIG_SYS_64BIT_LBA=y
++# CONFIG_BOOTCOUNT_LIMIT is not set
++
++#
++# Button Support
++#
++# CONFIG_BUTTON is not set
++
++#
++# Cache Controller drivers
++#
++# CONFIG_CACHE is not set
++# CONFIG_L2X0_CACHE is not set
++# CONFIG_V5L2_CACHE is not set
++# CONFIG_NCORE_CACHE is not set
++# CONFIG_SIFIVE_CCACHE is not set
++
++#
++# Clock
++#
++# CONFIG_CLK is not set
++# CONFIG_CLK_CCF is not set
++# CONFIG_CLK_RCAR is not set
++# CONFIG_CLK_RCAR_CPG_LIB is not set
++# CONFIG_CPU is not set
++
++#
++# Hardware crypto devices
++#
++# CONFIG_DM_HASH is not set
++# CONFIG_FSL_CAAM is not set
++# CONFIG_SYS_FSL_SEC_BE is not set
++# CONFIG_SYS_FSL_SEC_LE is not set
++# CONFIG_NPCM_AES is not set
++# CONFIG_NPCM_SHA is not set
++# CONFIG_DDR_SPD is not set
++# CONFIG_IMX_SNPS_DDR_PHY is not set
++
++#
++# Demo for driver model
++#
++# CONFIG_DM_DEMO is not set
++
++#
++# DFU support
++#
++
++#
++# DMA Support
++#
++# CONFIG_DMA is not set
++# CONFIG_DMA_LPC32XX is not set
++# CONFIG_TI_EDMA3 is not set
++# CONFIG_DMA_LEGACY is not set
++
++#
++# Extcon Support
++#
++# CONFIG_EXTCON is not set
++
++#
++# Fastboot support
++#
++# CONFIG_UDP_FUNCTION_FASTBOOT is not set
++# CONFIG_TCP_FUNCTION_FASTBOOT is not set
++# CONFIG_FIRMWARE is not set
++# CONFIG_ZYNQMP_FIRMWARE is not set
++# CONFIG_DM_FUZZING_ENGINE is not set
++
++#
++# FPGA support
++#
++# CONFIG_FPGA_ALTERA is not set
++# CONFIG_FPGA_SOCFPGA is not set
++# CONFIG_FPGA_LATTICE is not set
++# CONFIG_FPGA_XILINX is not set
++# CONFIG_DM_FPGA is not set
++# CONFIG_FWU_MDATA is not set
++CONFIG_GPIO=y
++# CONFIG_AT91_GPIO is not set
++# CONFIG_ASPEED_GPIO is not set
++# CONFIG_DA8XX_GPIO is not set
++# CONFIG_INTEL_BROADWELL_GPIO is not set
++# CONFIG_IMX_RGPIO2P is not set
++# CONFIG_IPROC_GPIO is not set
++CONFIG_KIRKWOOD_GPIO=y
++# CONFIG_LPC32XX_GPIO is not set
++# CONFIG_MCP230XX_GPIO is not set
++# CONFIG_MXC_GPIO is not set
++# CONFIG_MXS_GPIO is not set
++# CONFIG_CMD_PCA953X is not set
++# CONFIG_TCA642X is not set
++# CONFIG_VYBRID_GPIO is not set
++# CONFIG_PCA953X is not set
++
++#
++# Hardware Spinlock Support
++#
++# CONFIG_DM_HWSPINLOCK is not set
++# CONFIG_I2C is not set
++# CONFIG_INPUT is not set
++# CONFIG_DM_KEYBOARD is not set
++# CONFIG_TEGRA_KEYBOARD is not set
++# CONFIG_TWL4030_INPUT is not set
++
++#
++# IOMMU device drivers
++#
++# CONFIG_IOMMU is not set
++
++#
++# LED Support
++#
++# CONFIG_LED is not set
++# CONFIG_LED_STATUS is not set
++
++#
++# Mailbox Controller Support
++#
++# CONFIG_DM_MAILBOX is not set
++
++#
++# Memory Controller drivers
++#
++# CONFIG_MEMORY is not set
++# CONFIG_ATMEL_EBI is not set
++# CONFIG_MFD_ATMEL_SMC is not set
++
++#
++# Multifunction device drivers
++#
++# CONFIG_MISC is not set
++# CONFIG_NVMEM is not set
++# CONFIG_SPL_NVMEM is not set
++# CONFIG_SMSC_LPC47M is not set
++# CONFIG_SMSC_SIO1007 is not set
++# CONFIG_CROS_EC is not set
++# CONFIG_DS4510 is not set
++# CONFIG_FSL_SEC_MON is not set
++# CONFIG_IRQ is not set
++# CONFIG_NUVOTON_NCT6102D is not set
++# CONFIG_PWRSEQ is not set
++# CONFIG_PCA9551_LED is not set
++# CONFIG_TEST_DRV is not set
++# CONFIG_TWL4030_LED is not set
++# CONFIG_WINBOND_W83627 is not set
++# CONFIG_FS_LOADER is not set
++
++#
++# MMC Host controller Support
++#
++# CONFIG_MMC is not set
++# CONFIG_MMC_BROKEN_CD is not set
++# CONFIG_DM_MMC is not set
++# CONFIG_FSL_ESDHC is not set
++# CONFIG_FSL_ESDHC_IMX is not set
++
++#
++# MTD Support
++#
++CONFIG_MTD_PARTITIONS=y
++CONFIG_MTD=y
++# CONFIG_DM_MTD is not set
++# CONFIG_MTD_NOR_FLASH is not set
++# CONFIG_MTD_CONCAT is not set
++# CONFIG_SYS_MTDPARTS_RUNTIME is not set
++# CONFIG_FLASH_CFI_DRIVER is not set
++# CONFIG_SAMSUNG_ONENAND is not set
++# CONFIG_USE_SYS_MAX_FLASH_BANKS is not set
++# CONFIG_MTD_RAW_NAND is not set
++
++#
++# SPI Flash Support
++#
++CONFIG_DM_SPI_FLASH=y
++CONFIG_SPI_FLASH=y
++CONFIG_SF_DEFAULT_BUS=0
++CONFIG_SF_DEFAULT_CS=0
++# CONFIG_BOOTDEV_SPI_FLASH is not set
++# CONFIG_SPI_FLASH_SFDP_SUPPORT is not set
++CONFIG_SPI_FLASH_SMART_HWCAPS=y
++# CONFIG_SPI_NOR_BOOT_SOFT_RESET_EXT_INVERT is not set
++# CONFIG_SPI_FLASH_SOFT_RESET is not set
++# CONFIG_SPI_FLASH_BAR is not set
++CONFIG_SPI_FLASH_UNLOCK_ALL=y
++# CONFIG_SPI_FLASH_ATMEL is not set
++# CONFIG_SPI_FLASH_EON is not set
++# CONFIG_SPI_FLASH_GIGADEVICE is not set
++# CONFIG_SPI_FLASH_ISSI is not set
++# CONFIG_SPI_FLASH_MACRONIX is not set
++# CONFIG_SPI_FLASH_SPANSION is not set
++# CONFIG_SPI_FLASH_STMICRO is not set
++# CONFIG_SPI_FLASH_SST is not set
++CONFIG_SPI_FLASH_WINBOND=y
++# CONFIG_SPI_FLASH_XMC is not set
++# CONFIG_SPI_FLASH_XTX is not set
++# CONFIG_SPI_FLASH_USE_4K_SECTORS is not set
++# CONFIG_SPI_FLASH_DATAFLASH is not set
++CONFIG_SPI_FLASH_MTD=y
++
++#
++# UBI support
++#
++# CONFIG_UBI_SILENCE_MSG is not set
++CONFIG_MTD_UBI=y
++CONFIG_MTD_UBI_MODULE=y
++CONFIG_MTD_UBI_WL_THRESHOLD=4096
++CONFIG_MTD_UBI_BEB_LIMIT=4
++# CONFIG_MTD_UBI_FASTMAP is not set
++# CONFIG_NVMXIP is not set
++# CONFIG_NVMXIP_QSPI is not set
++
++#
++# Multiplexer drivers
++#
++# CONFIG_MULTIPLEXER is not set
++# CONFIG_BITBANGMII is not set
++# CONFIG_MV88E6352_SWITCH is not set
++CONFIG_PHYLIB=y
++# CONFIG_PHY_ADDR_ENABLE is not set
++# CONFIG_B53_SWITCH is not set
++# CONFIG_MV88E61XX_SWITCH is not set
++# CONFIG_PHYLIB_10G is not set
++# CONFIG_PHY_ADIN is not set
++# CONFIG_PHY_AQUANTIA is not set
++# CONFIG_PHY_ATHEROS is not set
++# CONFIG_SPL_PHY_ATHEROS is not set
++# CONFIG_PHY_BROADCOM is not set
++# CONFIG_PHY_CORTINA is not set
++# CONFIG_PHY_DAVICOM is not set
++# CONFIG_PHY_ET1011C is not set
++# CONFIG_PHY_LXT is not set
++CONFIG_PHY_MARVELL=y
++# CONFIG_PHY_MARVELL_10G is not set
++# CONFIG_PHY_MESON_GXL is not set
++# CONFIG_PHY_MICREL is not set
++# CONFIG_PHY_MOTORCOMM is not set
++# CONFIG_PHY_MSCC is not set
++# CONFIG_PHY_NATSEMI is not set
++# CONFIG_PHY_NXP_C45_TJA11XX is not set
++# CONFIG_PHY_NXP_TJA11XX is not set
++# CONFIG_PHY_REALTEK is not set
++# CONFIG_PHY_SMSC is not set
++# CONFIG_PHY_TERANETICS is not set
++# CONFIG_PHY_TI is not set
++# CONFIG_PHY_TI_DP83867 is not set
++# CONFIG_PHY_TI_DP83869 is not set
++# CONFIG_PHY_TI_GENERIC is not set
++# CONFIG_PHY_VITESSE is not set
++# CONFIG_PHY_XILINX is not set
++# CONFIG_PHY_XILINX_GMII2RGMII is not set
++# CONFIG_PHY_XWAY is not set
++# CONFIG_PHY_FIXED is not set
++# CONFIG_PHY_NCSI is not set
++# CONFIG_FSL_MEMAC is not set
++CONFIG_PHY_RESET_DELAY=0
++# CONFIG_FSL_PFE is not set
++CONFIG_ETH=y
++CONFIG_DM_ETH=y
++# CONFIG_DM_MDIO is not set
++# CONFIG_DM_ETH_PHY is not set
++CONFIG_NETDEVICES=y
++# CONFIG_PHY_GIGE is not set
++# CONFIG_ALTERA_TSE is not set
++# CONFIG_BCM_SF2_ETH is not set
++# CONFIG_BCMGENET is not set
++# CONFIG_BNXT_ETH is not set
++# CONFIG_CALXEDA_XGMAC is not set
++# CONFIG_DRIVER_DM9000 is not set
++# CONFIG_DWC_ETH_QOS is not set
++# CONFIG_EEPRO100 is not set
++# CONFIG_ETH_DESIGNWARE is not set
++# CONFIG_ETH_DESIGNWARE_MESON8B is not set
++# CONFIG_ETHOC is not set
++# CONFIG_FMAN_ENET is not set
++# CONFIG_FTMAC100 is not set
++# CONFIG_FTGMAC100 is not set
++# CONFIG_MCFFEC is not set
++# CONFIG_FSLDMAFEC is not set
++# CONFIG_KS8851_MLL is not set
++# CONFIG_LITEETH is not set
++CONFIG_MVGBE=y
++# CONFIG_MACB is not set
++# CONFIG_NET_NPCM750 is not set
++# CONFIG_PCH_GBE is not set
++CONFIG_RGMII=y
++# CONFIG_MII is not set
++# CONFIG_RMII is not set
++# CONFIG_PCNET is not set
++# CONFIG_QE_UEC is not set
++# CONFIG_RTL8139 is not set
++# CONFIG_SMC911X is not set
++# CONFIG_SUN7I_GMAC is not set
++# CONFIG_SUN4I_EMAC is not set
++# CONFIG_SUN8I_EMAC is not set
++# CONFIG_SH_ETHER is not set
++# CONFIG_DRIVER_TI_CPSW is not set
++# CONFIG_DRIVER_TI_EMAC is not set
++# CONFIG_DRIVER_TI_KEYSTONE_NET is not set
++# CONFIG_TULIP is not set
++# CONFIG_XILINX_AXIEMAC is not set
++# CONFIG_VSC7385_ENET is not set
++# CONFIG_XILINX_EMACLITE is not set
++# CONFIG_ZYNQ_GEM is not set
++# CONFIG_SYS_DPAA_QBMAN is not set
++# CONFIG_TSEC_ENET is not set
++# CONFIG_MEDIATEK_ETH is not set
++# CONFIG_HIGMACV300_ETH is not set
++# CONFIG_NVME is not set
++# CONFIG_NVME_APPLE is not set
++
++#
++# PCI Endpoint
++#
++# CONFIG_PCI_ENDPOINT is not set
++# CONFIG_X86_PCH7 is not set
++# CONFIG_X86_PCH9 is not set
++
++#
++# PHY Subsystem
++#
++# CONFIG_PHY is not set
++# CONFIG_MIPI_DPHY_HELPERS is not set
++
++#
++# Rockchip PHY driver
++#
++# CONFIG_MVEBU_COMPHY_SUPPORT is not set
++
++#
++# Pin controllers
++#
++# CONFIG_PINCTRL is not set
++# CONFIG_POWER is not set
++# CONFIG_DM_PWM is not set
++# CONFIG_PWM_IMX is not set
++# CONFIG_PWM_SANDBOX is not set
++# CONFIG_U_QE is not set
++# CONFIG_RAM is not set
++
++#
++# Reboot Mode Support
++#
++# CONFIG_DM_REBOOT_MODE is not set
++
++#
++# Remote Processor drivers
++#
++
++#
++# Reset Controller Support
++#
++# CONFIG_RESET_SCMI is not set
++# CONFIG_DM_RNG is not set
++
++#
++# Real Time Clock
++#
++# CONFIG_DM_RTC is not set
++# CONFIG_RTC_ENABLE_32KHZ_OUTPUT is not set
++# CONFIG_RTC_DS1337 is not set
++# CONFIG_RTC_DS1338 is not set
++# CONFIG_RTC_DS1374 is not set
++# CONFIG_RTC_DS3231 is not set
++# CONFIG_RTC_PCF8563 is not set
++# CONFIG_RTC_PT7C4338 is not set
++# CONFIG_RTC_PL031 is not set
++# CONFIG_RTC_S35392A is not set
++# CONFIG_RTC_MC13XXX is not set
++# CONFIG_RTC_MC146818 is not set
++# CONFIG_RTC_M41T62 is not set
++# CONFIG_SCSI is not set
++# CONFIG_DM_SCSI is not set
++CONFIG_SERIAL=y
++CONFIG_BAUDRATE=115200
++CONFIG_REQUIRE_SERIAL_CONSOLE=y
++# CONFIG_SPECIFY_CONSOLE_INDEX is not set
++CONFIG_SERIAL_PRESENT=y
++CONFIG_DM_SERIAL=y
++# CONFIG_SERIAL_RX_BUFFER is not set
++# CONFIG_SERIAL_PUTS is not set
++# CONFIG_SERIAL_SEARCH_ALL is not set
++# CONFIG_SERIAL_PROBE_ALL is not set
++# CONFIG_VPL_DM_SERIAL is not set
++# CONFIG_ALTERA_JTAG_UART is not set
++# CONFIG_ALTERA_UART is not set
++# CONFIG_ARC_SERIAL is not set
++# CONFIG_ARM_DCC is not set
++# CONFIG_ATMEL_USART is not set
++# CONFIG_BCM6345_SERIAL is not set
++# CONFIG_COREBOOT_SERIAL is not set
++# CONFIG_CORTINA_UART is not set
++# CONFIG_FSL_LINFLEXUART is not set
++# CONFIG_FSL_LPUART is not set
++# CONFIG_MVEBU_A3700_UART is not set
++# CONFIG_MCFUART is not set
++# CONFIG_NULLDEV_SERIAL is not set
++CONFIG_SYS_NS16550=y
++# CONFIG_NS16550_DYNAMIC is not set
++# CONFIG_SYS_NS16550_MEM32 is not set
++# CONFIG_SYS_NS16550_PORT_MAPPED is not set
++# CONFIG_PL01X_SERIAL is not set
++# CONFIG_ROCKCHIP_SERIAL is not set
++# CONFIG_XILINX_UARTLITE is not set
++# CONFIG_MSM_SERIAL is not set
++# CONFIG_MSM_GENI_SERIAL is not set
++# CONFIG_MXS_AUART_SERIAL is not set
++# CONFIG_OMAP_SERIAL is not set
++# CONFIG_SIFIVE_SERIAL is not set
++# CONFIG_ZYNQ_SERIAL is not set
++# CONFIG_MTK_SERIAL is not set
++# CONFIG_MT7620_SERIAL is not set
++# CONFIG_NPCM_SERIAL is not set
++# CONFIG_SMEM is not set
++
++#
++# Sound support
++#
++# CONFIG_SOUND is not set
++
++#
++# SOC (System On Chip) specific Drivers
++#
++# CONFIG_SOC_DEVICE is not set
++# CONFIG_SOC_TI is not set
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_SPI_MEM=y
++# CONFIG_SPI_DIRMAP is not set
++# CONFIG_ALTERA_SPI is not set
++# CONFIG_APPLE_SPI is not set
++# CONFIG_ATCSPI200_SPI is not set
++# CONFIG_ATMEL_SPI is not set
++# CONFIG_BCMSTB_SPI is not set
++# CONFIG_CORTINA_SFLASH is not set
++# CONFIG_CADENCE_QSPI is not set
++# CONFIG_CF_SPI is not set
++# CONFIG_DESIGNWARE_SPI is not set
++# CONFIG_EXYNOS_SPI is not set
++# CONFIG_FSL_DSPI is not set
++# CONFIG_FSL_QSPI is not set
++# CONFIG_GXP_SPI is not set
++# CONFIG_ICH_SPI is not set
++# CONFIG_IPROC_QSPI is not set
++CONFIG_KIRKWOOD_SPI=y
++# CONFIG_MICROCHIP_COREQSPI is not set
++# CONFIG_MPC8XXX_SPI is not set
++# CONFIG_MTK_SNOR is not set
++# CONFIG_MTK_SNFI_SPI is not set
++# CONFIG_MTK_SPIM is not set
++# CONFIG_MVEBU_A3700_SPI is not set
++# CONFIG_MXS_SPI is not set
++# CONFIG_SPI_MXIC is not set
++# CONFIG_NPCM_FIU_SPI is not set
++# CONFIG_NPCM_PSPI is not set
++# CONFIG_NXP_FSPI is not set
++# CONFIG_OMAP3_SPI is not set
++# CONFIG_PL022_SPI is not set
++# CONFIG_ROCKCHIP_SFC is not set
++# CONFIG_ROCKCHIP_SPI is not set
++# CONFIG_SPI_ASPEED_SMC is not set
++# CONFIG_SPI_SIFIVE is not set
++# CONFIG_SOFT_SPI is not set
++# CONFIG_SPI_SN_F_OSPI is not set
++# CONFIG_SPI_SUNXI is not set
++# CONFIG_TEGRA114_SPI is not set
++# CONFIG_TEGRA20_SFLASH is not set
++# CONFIG_TEGRA20_SLINK is not set
++# CONFIG_TEGRA210_QSPI is not set
++# CONFIG_TI_QSPI is not set
++# CONFIG_XILINX_SPI is not set
++# CONFIG_ZYNQ_SPI is not set
++# CONFIG_ZYNQ_QSPI is not set
++# CONFIG_ZYNQMP_GQSPI is not set
++# CONFIG_SH_QSPI is not set
++# CONFIG_MXC_SPI is not set
++
++#
++# SPMI support
++#
++# CONFIG_SPMI is not set
++# CONFIG_SYSINFO is not set
++
++#
++# System reset device drivers
++#
++# CONFIG_SYSRESET is not set
++# CONFIG_DM_THERMAL is not set
++
++#
++# Timer Support
++#
++CONFIG_TIMER=y
++# CONFIG_TIMER_EARLY is not set
++# CONFIG_ALTERA_TIMER is not set
++# CONFIG_AST_TIMER is not set
++# CONFIG_ATCPIT100_TIMER is not set
++# CONFIG_ATMEL_PIT_TIMER is not set
++# CONFIG_CADENCE_TTC_TIMER is not set
++# CONFIG_DESIGNWARE_APB_TIMER is not set
++# CONFIG_FTTMR010_TIMER is not set
++# CONFIG_GXP_TIMER is not set
++# CONFIG_MPC83XX_TIMER is not set
++# CONFIG_RENESAS_OSTM_TIMER is not set
++# CONFIG_NOMADIK_MTU_TIMER is not set
++# CONFIG_NPCM_TIMER is not set
++# CONFIG_OMAP_TIMER is not set
++CONFIG_ORION_TIMER=y
++# CONFIG_ROCKCHIP_TIMER is not set
++# CONFIG_ARM_GLOBAL_TIMER is not set
++# CONFIG_SP804_TIMER is not set
++# CONFIG_STM32_TIMER is not set
++# CONFIG_TEGRA_TIMER is not set
++# CONFIG_MTK_TIMER is not set
++# CONFIG_MCHP_PIT64B_TIMER is not set
++# CONFIG_IMX_GPT_TIMER is not set
++# CONFIG_XILINX_TIMER is not set
++
++#
++# TPM support
++#
++CONFIG_USB=y
++CONFIG_DM_USB=y
++# CONFIG_DM_USB_GADGET is not set
++
++#
++# USB Host Controller Drivers
++#
++CONFIG_USB_HOST=y
++# CONFIG_USB_XHCI_HCD is not set
++CONFIG_USB_EHCI_HCD=y
++CONFIG_USB_EHCI_IS_TDI=y
++CONFIG_USB_EHCI_MARVELL=y
++# CONFIG_USB_EHCI_MSM is not set
++# CONFIG_USB_EHCI_PCI is not set
++# CONFIG_USB_EHCI_ZYNQ is not set
++# CONFIG_USB_EHCI_GENERIC is not set
++# CONFIG_USB_EHCI_FSL is not set
++# CONFIG_USB_OHCI_HCD is not set
++# CONFIG_USB_UHCI_HCD is not set
++# CONFIG_USB_DWC2 is not set
++# CONFIG_USB_R8A66597_HCD is not set
++# CONFIG_USB_ISP1760 is not set
++
++#
++# Legacy MUSB Support
++#
++# CONFIG_USB_MUSB_HCD is not set
++# CONFIG_USB_MUSB_UDC is not set
++
++#
++# MUSB Controller Driver
++#
++# CONFIG_USB_MUSB_HOST is not set
++# CONFIG_USB_MUSB_PIO_ONLY is not set
++
++#
++# USB Phy
++#
++# CONFIG_TWL4030_USB is not set
++# CONFIG_ROCKCHIP_USB2_PHY is not set
++
++#
++# ULPI drivers
++#
++
++#
++# USB peripherals
++#
++CONFIG_USB_STORAGE=y
++# CONFIG_USB_KEYBOARD is not set
++# CONFIG_USB_ONBOARD_HUB is not set
++CONFIG_USB_HUB_DEBOUNCE_TIMEOUT=1000
++# CONFIG_USB_HOST_ETHER is not set
++# CONFIG_USB_GADGET is not set
++# CONFIG_SPL_USB_GADGET is not set
++
++#
++# UFS Host Controller Support
++#
++# CONFIG_TI_J721E_UFS is not set
++
++#
++# Graphics support
++#
++# CONFIG_VIDEO is not set
++
++#
++# VirtIO Drivers
++#
++# CONFIG_VIRTIO_MMIO is not set
++
++#
++# 1-Wire support
++#
++# CONFIG_W1 is not set
++
++#
++# 1-wire EEPROM support
++#
++# CONFIG_W1_EEPROM is not set
++
++#
++# Watchdog Timer Support
++#
++# CONFIG_WATCHDOG is not set
++CONFIG_WATCHDOG_TIMEOUT_MSECS=60000
++# CONFIG_IMX_WATCHDOG is not set
++# CONFIG_ULP_WATCHDOG is not set
++# CONFIG_WDT is not set
++# CONFIG_PHYS_TO_BUS is not set
++
++#
++# File systems
++#
++# CONFIG_FS_BTRFS is not set
++# CONFIG_FS_CBFS is not set
++CONFIG_FS_EXT4=y
++# CONFIG_EXT4_WRITE is not set
++CONFIG_FS_FAT=y
++# CONFIG_FAT_WRITE is not set
++CONFIG_FS_FAT_MAX_CLUSTSIZE=65536
++# CONFIG_FS_JFFS2 is not set
++# CONFIG_UBIFS_SILENCE_MSG is not set
++# CONFIG_UBIFS_SILENCE_DEBUG_DUMP is not set
++# CONFIG_FS_CRAMFS is not set
++# CONFIG_YAFFS2 is not set
++# CONFIG_FS_SQUASHFS is not set
++# CONFIG_FS_EROFS is not set
++
++#
++# Library routines
++#
++# CONFIG_ADDR_MAP is not set
++# CONFIG_SYS_TIMER_COUNTS_DOWN is not set
++# CONFIG_PHYSMEM is not set
++# CONFIG_BCH is not set
++# CONFIG_CC_OPTIMIZE_LIBS_FOR_SPEED is not set
++CONFIG_DYNAMIC_CRC_TABLE=y
++CONFIG_HAVE_PRIVATE_LIBGCC=y
++CONFIG_LIB_UUID=y
++# CONFIG_SEMIHOSTING is not set
++CONFIG_PRINTF=y
++CONFIG_SPRINTF=y
++CONFIG_STRTO=y
++CONFIG_USE_PRIVATE_LIBGCC=y
++CONFIG_SYS_HZ=1000
++# CONFIG_PANIC_HANG is not set
++# CONFIG_REGEX is not set
++CONFIG_LIB_RAND=y
++# CONFIG_LIB_HW_RAND is not set
++CONFIG_SUPPORT_ACPI=y
++# CONFIG_ACPI is not set
++CONFIG_RBTREE=y
++# CONFIG_BITREVERSE is not set
++# CONFIG_TRACE is not set
++# CONFIG_CIRCBUF is not set
++# CONFIG_CMD_DHRYSTONE is not set
++
++#
++# Security support
++#
++# CONFIG_AES is not set
++# CONFIG_ECDSA is not set
++# CONFIG_RSA is not set
++# CONFIG_TPM is not set
++
++#
++# Android Verified Boot
++#
++
++#
++# Hashing Support
++#
++# CONFIG_BLAKE2 is not set
++CONFIG_SHA1=y
++# CONFIG_SHA256 is not set
++# CONFIG_SHA512 is not set
++# CONFIG_SHA384 is not set
++# CONFIG_SHA_HW_ACCEL is not set
++CONFIG_MD5=y
++CONFIG_CRC8=y
++CONFIG_CRC32=y
++
++#
++# Compression Support
++#
++# CONFIG_LZ4 is not set
++# CONFIG_LZMA is not set
++CONFIG_LZO=y
++CONFIG_GZIP=y
++# CONFIG_ZLIB_UNCOMPRESS is not set
++# CONFIG_BZIP2 is not set
++CONFIG_ZLIB=y
++# CONFIG_ZSTD is not set
++# CONFIG_VPL_LZMA is not set
++# CONFIG_SPL_GZIP is not set
++# CONFIG_ERRNO_STR is not set
++# CONFIG_HEXDUMP is not set
++# CONFIG_GETOPT is not set
++CONFIG_OF_LIBFDT=y
++CONFIG_OF_LIBFDT_ASSUME_MASK=0
++CONFIG_SYS_FDT_PAD=0x3000
++# CONFIG_FDT_FIXUP_PARTITIONS is not set
++
++#
++# System tables
++#
++# CONFIG_LIB_RATIONAL is not set
++# CONFIG_SMBIOS_PARSER is not set
++# CONFIG_OPTEE_LIB is not set
++# CONFIG_OPTEE_IMAGE is not set
++# CONFIG_BOOTM_OPTEE is not set
++# CONFIG_TEST_FDTDEC is not set
++CONFIG_LMB=y
++# CONFIG_LMB_USE_MAX_REGIONS is not set
++CONFIG_LMB_MEMORY_REGIONS=8
++CONFIG_LMB_RESERVED_REGIONS=8
++# CONFIG_PHANDLE_CHECK_SEQ is not set
++
++#
++# FWU Multi Bank Updates
++#
++# CONFIG_POST is not set
++
++#
++# Unit tests
++#
++# CONFIG_UNIT_TEST is not set
++
++#
++# Tools options
++#
++CONFIG_MKIMAGE_DTC_PATH="dtc"
++CONFIG_TOOLS_CRC32=y
++CONFIG_TOOLS_LIBCRYPTO=y
++CONFIG_TOOLS_FIT=y
++CONFIG_TOOLS_FIT_FULL_CHECK=y
++CONFIG_TOOLS_FIT_PRINT=y
++CONFIG_TOOLS_FIT_RSASSA_PSS=y
++CONFIG_TOOLS_FIT_SIGNATURE=y
++CONFIG_TOOLS_FIT_SIGNATURE_MAX_SIZE=0x10000000
++CONFIG_TOOLS_FIT_VERBOSE=y
++CONFIG_TOOLS_MD5=y
++CONFIG_TOOLS_OF_LIBFDT=y
++CONFIG_TOOLS_SHA1=y
++CONFIG_TOOLS_SHA256=y
++CONFIG_TOOLS_SHA384=y
++CONFIG_TOOLS_SHA512=y
++# CONFIG_TOOLS_MKEFICAPSULE is not set
++# CONFIG_FSPI_CONF_HEADER is not set
++# CONFIG_TOOLS_MKFWUMDATA is not set
+diff --git a/include/configs/lswsxl.h b/include/configs/lswsxl.h
+new file mode 100644
+index 0000000000..7993c2804d
+--- /dev/null
++++ b/include/configs/lswsxl.h
+@@ -0,0 +1,91 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (c) 2012 Michael Walle
++ * Michael Walle <michael@walle.cc>
++ */
++
++#ifndef _CONFIG_LSWSXL_H
++#define _CONFIG_LSWSXL_H
++
++/*
++ * General configuration options
++ */
++
++#include "mv-common.h"
++
++/* loading initramfs images without uimage header */
++
++/*
++ *  Environment variables configurations
++ */
++
++/*
++ * Default environment variables
++ */
++
++#if defined(CONFIG_TARGET_LSWSXL)
++#define CONFIG_MACH_TYPE MACH_TYPE_LSWXL
++//#undef CONFIG_SYS_TCLK
++//#define CONFIG_SYS_TCLK 166666667 /* 166 MHz */
++#else
++#error "Unsupported board"
++#endif
++
++#define CFG_EXTRA_ENV_SETTINGS					\
++	"bootsource=ubi\0"						\
++	"kernel_addr=0x00800000\0"					\
++        "bootcmd_net=tftpboot ${kernel_addr} buffalo-initramfs.itb " 	\
++                "&& bootm ${kernel_addr} \0"                            \
++	"bootcmd_usb=usb start "					\
++		"&& load usb 0:1 ${kernel_addr} /buffalo-initramfs.itb "\
++		"&& bootm ${kernel_addr} \0"				\
++	"bootcmd_ubi=ubi part rootfs && ubi read ${kernel_addr} kernel "\
++		"&& bootm ${kernel_addr} \0"				\
++	"bootcmd_rescue=run bootcmd_net \0"				\
++	"eraseenv=sf probe 0 "						\
++		"&& sf erase " __stringify(CONFIG_ENV_OFFSET)		\
++			" +" __stringify(CONFIG_ENV_SIZE) "\0"		\
++	"standard_env=setenv ipaddr; setenv netmask; setenv serverip; "	\
++		"setenv bootsource ubi; run ser\0"			\
++	"restore_env=run standard_env; saveenv; reset\0"		\
++	"ser=setenv stdin serial; setenv stdout serial; "		\
++		"setenv stderr serial\0"				\
++	"ethaddr=00:24:A5:7D:B3:2F\0"					\
++	"stdin=serial\0"						\
++	"stdout=serial\0"						\
++	"stderr=serial\0"
++
++/*
++ * Ethernet Driver configuration
++ */
++//#ifdef CONFIG_CMD_NET
++//#define CONFIG_MVGBE_PORTS		{0, 1} /* enable port 0 only */
++//#define CONFIG_PHY_BASE_ADR		7
++//#undef CONFIG_RESET_PHY_R
++//#endif /* CONFIG_CMD_NET */
++
++/* windbond w25q128 */
++//#define CONFIG_ENV_SPI_MAX_HZ		50000000
++//#define CONFIG_SF_DEFAULT_SPEED		50000000
++//#define CONFIG_MTDIDS_DEFAULT "nor0=w25q128-flash.0"
++//#define CONFIG_MTDPARTS_DEFAULT "mtdparts=w25q128-flash.0:448k(uboot),32k(dtb),32k(uboot_env),15872k(ubi)"
++
++/*
++ *  Environment variables configurations
++ */
++
++
++//#ifdef CONFIG_SPI_FLASH
++//#define CONFIG_SYS_MAX_FLASH_BANKS	1
++//#define CONFIG_SYS_MAX_FLASH_SECT	256
++//#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++//#define CONFIG_ENV_SECT_SIZE		0x10000 /* 64K */
++//#else
++//#define CONFIG_ENV_IS_NOWHERE
++//#endif
++
++//#define CONFIG_ENV_SIZE			0x10000 /* 64k */
++//#define CONFIG_ENV_OFFSET		0x70000 /* env starts here */
++
++
++#endif /* _CONFIG_LSWSXL_H */
+-- 
+2.39.2
+

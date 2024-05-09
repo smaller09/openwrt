@@ -399,4 +399,25 @@ define Device/zyxel_nsa325
 endef
 TARGET_DEVICES += zyxel_nsa325
 
+define Device/buffalo_lswsxl
+	UBIFS_OPTS := -m 1 -e 65408 -x zlib -F
+	UBINIZE_OPTS := -p 65536 -m 1 -s 1 -O 64
+	DEVICE_VENDOR := Buffalo
+	DEVICE_MODEL := LinkStation LS-WSXL
+	DEVICE_TYPE := nas
+	DEVICE_PACKAGES := kmod-gpio-button-hotplug kmod-usb2 mdadm
+	DEVICE_DTS := kirkwood-linkstation-lswsxl
+	KERNEL_LOADADDR := 0x2000000
+	KERNEL_ENTRY := 0x2000000
+	KERNEL_NAME := zImage
+	KERNEL_DEPENDS = $$(wildcard $(DTS_DIR)/$$(DEVICE_DTS).dts)
+	KERNEL_IN_UBI := 1
+	KERNEL_SUFFIX := -uImage.itb
+	KERNEL = kernel-bin | fit none $$(KDIR)/image-$$(DEVICE_DTS).dtb
+	IMAGES := factory.ubi sysupgrade.bin
+	IMAGE/factory.ubi := append-ubi
+	IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += buffalo_lswsxl
+
 $(eval $(call BuildImage))
