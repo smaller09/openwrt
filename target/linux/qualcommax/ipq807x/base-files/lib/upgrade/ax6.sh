@@ -49,7 +49,7 @@ ax6_do_upgrade_success() {
 ax6_do_upgrade() {
 	local file="$1"
 	echo "AX6 upgrading ..."
-	nand_verify_tar_file "$file" || nand_do_upgrade_failed
+	nand_verify_tar_file "$file" "cat" || nand_do_upgrade_failed
 	sync
 	ax6_upgrade_tar "$file" && ax6_do_upgrade_success
 	nand_do_upgrade_failed
