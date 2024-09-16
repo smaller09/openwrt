@@ -27,6 +27,28 @@ xiaomi_initramfs_prepare() {
 	ubiformat /dev/mtd$kern_mtdnum -y
 }
 
+ax6_initramfs_prepare() {
+	# Wipe UBI if running initramfs
+	[ "$(rootfs_type)" = "tmpfs" ] || return 0
+
+	local rootfs_mtdnum="$( find_mtd_index rootfs )"
+	if [ ! "$rootfs_mtdnum" ]; then
+		echo "unable to find mtd partition rootfs"
+		return 1
+	fi
+
+	local ubi_mtdnum="$( find_mtd_index data )"
+	if [ ! "$ubi_mtdnum" ]; then
+		echo "unable to find mtd partition data"
+		return 1
+	fi
+	ubidetach -m "$ubi_mtdnum"
+	ubiformat /dev/mtd$ubi_mtdnum -y
+
+	ubidetach -m "$rootfs_mtdnum"
+	ubiformat /dev/mtd$rootfs_mtdnum -y
+}
+
 asus_initial_setup() {
 	# Remove existing linux and jffs2 volumes
 	[ "$(rootfs_type)" = "tmpfs" ] || return 0
@@ -117,10 +139,12 @@ platform_pre_upgrade() {
 	asus,rt-ax89x)
 		asus_initial_setup
 		;;
-	redmi,ax6|\
 	xiaomi,ax3600|\
 	xiaomi,ax9000)
 		xiaomi_initramfs_prepare
+		;;
+	redmi,ax6)
+		ax6_initramfs_prepare
 		;;
 	esac
 }
@@ -201,7 +225,6 @@ platform_do_upgrade() {
 		CI_ROOTPART="rootfs"
 		emmc_do_upgrade "$1"
 		;;
-	redmi,ax6|\
 	xiaomi,ax3600|\
 	xiaomi,ax9000)
 		# Make sure that UART is enabled
@@ -219,6 +242,21 @@ platform_do_upgrade() {
 		CI_KERN_UBIPART="ubi_kernel"
 		CI_ROOT_UBIPART="rootfs"
 		nand_do_upgrade "$1"
+		;;
+	redmi,ax6)
+		# Make sure that UART is enabled
+		fw_setenv boot_wait on
+		fw_setenv uart_en 1
+
+		# Enforce single partition.
+		fw_setenv flag_boot_rootfs 0
+		fw_setenv flag_last_success 0
+		fw_setenv flag_boot_success 1
+		fw_setenv flag_try_sys1_failed 8
+		fw_setenv flag_try_sys2_failed 8
+
+		# rootfs and overlayfs are placed in 2 different UBI
+		ax6_do_upgrade "$1"
 		;;
 	spectrum,sax1v1k)
 		CI_KERNPART="0:HLOS"

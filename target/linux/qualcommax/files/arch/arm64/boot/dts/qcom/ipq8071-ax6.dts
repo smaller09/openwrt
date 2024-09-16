@@ -3,7 +3,7 @@
 
 /dts-v1/;
 
-#include "ipq8071-ax3600.dtsi"
+#include "ipq8071-ax6.dtsi"
 
 / {
 	model = "Redmi AX6";
@@ -37,8 +37,8 @@
 /* AX6 can both have NAND of 256MiB or 128MiB.
  * To be on the safe side, assume 128MiB of NAND.
  */
-&rootfs {
-	reg = <0x2dc0000 0x5220000>;
+&overlayfs {
+	reg = <0x2dc0000 0x5240000>;
 };
 
 &wifi {
