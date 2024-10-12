@@ -8,13 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ath11k-firmware
-PKG_SOURCE_DATE:=2024-03-14
-PKG_SOURCE_VERSION:=795809c7041582bd51bdfaa1f548b916ae8d4382
-PKG_MIRROR_HASH:=d93edc651b641a97ec4f5ed329e15ac110928f863b4afbaae7fcb25953d04544
-PKG_RELEASE:=2
+PKG_SOURCE_DATE:=2024-10-12
+PKG_SOURCE_VERSION:=0b0dfdca6130c6d80e63dbe22ae7a0fca293c5e9
+PKG_MIRROR_HASH:=32d33d485a59e77c353340d65df00486c1ed82c135be67ac518fdaaac67993f0
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_URL:=https://github.com/quic/upstream-wifi-fw.git
+PKG_SOURCE_URL:=https://gh.api.99988866.xyz/https://github.com/smaller09/upstream-wifi-fw.git
 
 PKG_LICENSE_FILES:=LICENSE.qca_firmware
 
@@ -65,15 +65,19 @@ $(eval $(call Download,qcn9074-board))
 define Package/ath11k-firmware-ipq6018/install
 	$(INSTALL_DIR) $(1)/lib/firmware/IPQ6018
 	$(INSTALL_DATA) \
-		$(PKG_BUILD_DIR)/ath11k-firmware/IPQ6018/hw1.0/2.5.0.1/WLAN.HK.2.5.0.1-03982-QCAHKSWPL_SILICONZ-3/* \
+		$(PKG_BUILD_DIR)/ath11k-firmware/IPQ6018/hw1.0/testing/2.12/WLAN.HK.2.12-01368-QCAHKSWPL_SILICONZ-1/* \
 		$(1)/lib/firmware/IPQ6018/
 endef
 
 define Package/ath11k-firmware-ipq8074/install
 	$(INSTALL_DIR) $(1)/lib/firmware/IPQ8074
 	$(INSTALL_DATA) \
-		$(PKG_BUILD_DIR)/ath11k-firmware/IPQ8074/hw2.0/2.9.0.1/WLAN.HK.2.9.0.1-01977-QCAHKSWPL_SILICONZ-1/* \
+		$(PKG_BUILD_DIR)/ath11k-firmware/IPQ8074/hw2.0/testing/2.12/WLAN.HK.2.12-01460-QCAHKSWPL_SILICONZ-1/* \
 		$(1)/lib/firmware/IPQ8074/
+	$(INSTALL_DIR) $(1)/lib/firmware/ath11k/IPQ8074/hw2.0
+	$(INSTALL_BIN) \
+		$(PKG_BUILD_DIR)/ath11k-firmware/IPQ8074/hw2.0/testing/2.12/WLAN.HK.2.12-01460-QCAHKSWPL_SILICONZ-1/board-2.bin \
+		$(1)/lib/firmware/ath11k/IPQ8074/hw2.0/
 endef
 
 define Package/ath11k-firmware-qcn9074/install
