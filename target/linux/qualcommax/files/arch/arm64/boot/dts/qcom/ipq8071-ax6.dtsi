@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /* Copyright (c) 2021, Robert Marko <robimarko@gmail.com> */
 
-#include "ipq8074-512m.dtsi"
+#include "ipq8074.dtsi"
 #include "ipq8074-ac-cpu.dtsi"
 #include "ipq8074-ess.dtsi"
 #include "ipq8074-nss.dtsi"
@@ -20,7 +20,7 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
-		bootargs-append = " ubi.mtd=data root=/dev/ubiblock0_1";
+		bootargs-append = " ubi.mtd=data root=/dev/ubiblock0_1 pstore_blk.blkdev=pstore";
 	};
 
 	keys {
