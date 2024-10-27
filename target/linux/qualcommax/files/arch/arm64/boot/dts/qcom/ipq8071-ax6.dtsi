@@ -20,7 +20,7 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
-		bootargs-append = " ubi.mtd=data root=/dev/ubiblock0_1";
+		bootargs-append = " ubi.mtd=data root=/dev/ubiblock0_1 pstore_blk.blkdev=pstore";
 	};
 
 	keys {
