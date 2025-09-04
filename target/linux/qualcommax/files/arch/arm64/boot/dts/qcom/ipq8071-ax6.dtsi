@@ -20,7 +20,7 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
-		bootargs-append = " ubi.mtd=data root=/dev/ubiblock0_1";
+		bootargs-append = " ubi.mtd=data root=/dev/ubiblock0_1 mtdoops.mtddev=pstore";
 	};
 
 	keys {
@@ -309,4 +309,6 @@
 	status = "okay";
 
 	qcom,ath11k-fw-memory-mode = <1>;
+
+	qcom,m3-dump-addr = <0x4e800000>;
 };
