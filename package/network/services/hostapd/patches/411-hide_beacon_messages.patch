@@ -1,0 +1,20 @@
+--- a/src/ap/rrm.c
++++ b/src/ap/rrm.c
+@@ -87,7 +87,7 @@ static void hostapd_handle_beacon_report
+ 	report[0] = '\0';
+ 	if (wpa_snprintf_hex(report, sizeof(report), pos, len) < 0)
+ 		return;
+-	wpa_msg(hapd->msg_ctx, MSG_INFO, BEACON_RESP_RX MACSTR " %u %02x %s",
++	wpa_msg(hapd->msg_ctx, MSG_DEBUG, BEACON_RESP_RX MACSTR " %u %02x %s",
+ 		MAC2STR(addr), token, rep_mode, report);
+ }
+ 
+@@ -720,7 +720,7 @@ void hostapd_rrm_beacon_req_tx_status(st
+ {
+ 	if (len < 24 + 3)
+ 		return;
+-	wpa_msg(hapd->msg_ctx, MSG_INFO, BEACON_REQ_TX_STATUS MACSTR
++	wpa_msg(hapd->msg_ctx, MSG_DEBUG, BEACON_REQ_TX_STATUS MACSTR
+ 		" %u ack=%d", MAC2STR(mgmt->da),
+ 		mgmt->u.action.u.rrm.dialog_token, ok);
+ }
