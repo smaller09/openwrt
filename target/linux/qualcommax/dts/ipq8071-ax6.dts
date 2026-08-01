@@ -9,6 +9,10 @@
 	model = "Redmi AX6";
 	compatible = "redmi,ax6", "qcom,ipq8074";
 
+    chosen {
+        bootargs-append = " ubi.mtd=rootfs_data root=/dev/ubiblock0_1 mtdoops.mtddev=pstore";
+    };
+
 	leds {
 		compatible = "gpio-leds";
 
@@ -37,8 +41,28 @@
 /* AX6 can both have NAND of 256MiB or 128MiB.
  * To be on the safe side, assume 128MiB of NAND.
  */
-&rootfs {
-	reg = <0x2dc0000 0x5220000>;
+
+&qpic_nand {
+    nand@0 {
+        partitions {
+
+            /* 修改原 ubi_kernel 分区 → rootfs */
+            partition@a00000 {
+                label = "rootfs";
+                reg = <0xa00000 0x23c0000>;
+            };
+
+            /* 修改原 rootfs 分区 → rootfs_data */
+            partition@2dc0000 {
+                label = "rootfs_data";
+                reg = <0x2dc0000 0x5240000>;
+            };
+
+            /* ↑ 其余所有分区（sbl1、mibib、art、pstore 等）
+             *   全部保持 dtsi 中的原始定义，无需重复书写
+             */
+        };
+    };
 };
 
 &wifi {
