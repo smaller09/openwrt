@@ -47,10 +47,10 @@ index 313dc7b..24389f5 100644
  }
  
 diff --git a/drivers/net/wireless/ath/ath11k/nss.c b/drivers/net/wireless/ath/ath11k/nss.c
-index 46546c1..28117ba 100644
+index 0d21d97..b91fcfe 100644
 --- a/drivers/net/wireless/ath/ath11k/nss.c
 +++ b/drivers/net/wireless/ath/ath11k/nss.c
-@@ -3382,6 +3382,13 @@ static int ath11k_nss_stop(struct ath11k_base *ab)
+@@ -3384,6 +3384,13 @@ static int ath11k_nss_stop(struct ath11k_base *ab)
  	nss_tx_status_t status;
  	int ret;
  
@@ -64,7 +64,7 @@ index 46546c1..28117ba 100644
  	ath11k_dbg(ab, ATH11K_DBG_NSS, "NSS stop\n");
  	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
  	if (!wlmsg)
-@@ -3519,6 +3526,14 @@ int ath11k_nss_teardown(struct ath11k_base *ab)
+@@ -3521,6 +3528,14 @@ int ath11k_nss_teardown(struct ath11k_base *ab)
  	return 0;
  }
  
