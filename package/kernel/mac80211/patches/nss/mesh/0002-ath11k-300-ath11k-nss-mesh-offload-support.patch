@@ -1404,10 +1404,9 @@ index 5e80248..4cb4388 100644
  		ath11k_nss_process_mic_error(ab, skb);
  		break;
  	default:
--		kfree(skb);
 +		ath11k_dbg(ab, ATH11K_DBG_NSS, "unknown packet type received in wifili ext cb %d",
 +			    wepm->pkt_type);
-+		dev_kfree_skb_any(skb);
+ 		dev_kfree_skb_any(skb);
  		break;
  	}
  }
