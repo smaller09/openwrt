@@ -1,6 +1,9 @@
 ---
 blank_issues_enabled: false
 contact_links:
+  - name: Prebuilt images for every IPQ807x device
+    url: https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder/releases/latest
+    about: One image set per device, rebuilt as this tree moves. Reproduce on it before filing — a self-built image carries a config nobody else has.
   - name: The bug also happens on an official OpenWrt image
     url: https://github.com/openwrt/openwrt/issues/new/choose
     about: Then it is not this fork's bug. Report it to OpenWrt itself — this tracker only covers what the NSS offload path adds on top.

@@ -15,11 +15,12 @@ for (const [k, v] of Object.entries(F))
 
 // Dropdown answers the routing rules match on must still be offerable.
 for (const opt of ['qosmio/openwrt-ipq image', 'Official OpenWrt image (no NSS)', 'Another NSS build',
+	'Prebuilt release image (Qualcommax NSS Builder)', 'Self-built from this repo (nss-edma-rework)',
 	'Yes — and an official OpenWrt image is broken the same way', 'Not tested yet'])
 	assert.ok(form.includes(opt), `bug.yml no longer offers "${opt}"`);
 
 const good = {
-	[F.image]: 'Release image from this repo',
+	[F.image]: 'Prebuilt release image (Qualcommax NSS Builder)',
 	[F.gate]: 'No — with the offload off the box is fine',
 	[F.state]: '```text\n{"kernel":"6.18.1",...}\nnss.general.enabled=\'1\'\nNSS offload status: up\n```',
 	[F.what]: 'The WAN port stops transmitting after a few hours and never comes back.',

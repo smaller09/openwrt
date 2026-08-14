@@ -16,6 +16,13 @@ body:
         missing and **closes itself 7 days later**. Supply what is missing by *editing
         this issue* — the check re-runs on every edit.
 
+        **Reproduce it on the prebuilt image for your device first.**
+        [Every IPQ807x device has one](https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder/releases/latest)
+        — pick `...-<your device>-squashfs-sysupgrade.bin`. A self-built image carries a
+        config nobody else has, so "does it happen on the prebuilt image too" is the
+        difference between a bug that can be worked and one that starts with a day of
+        rebuilding yours.
+
   - type: checkboxes
     id: ack
     attributes:
@@ -32,10 +39,14 @@ body:
     id: image
     attributes:
       label: Which image
+      description: |
+        The prebuilt images are at
+        [Qualcommax_NSS_Builder → Releases](https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder/releases/latest),
+        one per IPQ807x device, rebuilt as this tree moves.
       options:
-        - Release image from this repo
+        - Prebuilt release image (Qualcommax NSS Builder)
         - Self-built from this repo (nss-edma-rework)
-        - Built with Qualcommax_NSS_Builder
+        - Self-built with Qualcommax NSS Builder
         - qosmio/openwrt-ipq image
         - Official OpenWrt image (no NSS)
         - Another NSS build
